@@ -49,6 +49,21 @@ export function BulkActionBar({
     }
   };
 
+  const handleGenerateAndSync = async () => {
+    setGenerating(true);
+    try {
+      await onBulkGenerate(selected, mode);
+    } finally {
+      setGenerating(false);
+    }
+    setSyncing(true);
+    try {
+      await onBulkSync(selected);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const modeLabels = { full: "Tout générer", seo: "SEO seulement", google: "Google seulement" };
 
   return (
@@ -102,32 +117,41 @@ export function BulkActionBar({
         )}
       </div>
 
-      {/* Generate button */}
+      {/* Generate + Sync (primary) */}
+      <button
+        onClick={handleGenerateAndSync}
+        disabled={generating || syncing}
+        className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors font-medium"
+      >
+        {generating ? (
+          <><Loader2 className="w-4 h-4 animate-spin" /> Génération...</>
+        ) : syncing ? (
+          <><Loader2 className="w-4 h-4 animate-spin" /> Sync Shopify...</>
+        ) : (
+          <><Zap className="w-4 h-4" /> Générer & Sync</>
+        )}
+      </button>
+
+      {/* Generate only */}
       <button
         onClick={handleGenerate}
         disabled={generating || syncing}
-        className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors"
+        className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
+        title="Générer sans synchroniser"
       >
-        {generating ? (
-          <Loader2 className="w-4 h-4 animate-spin" />
-        ) : (
-          <Zap className="w-4 h-4" />
-        )}
+        <Zap className="w-3.5 h-3.5" />
         Générer
       </button>
 
-      {/* Sync button */}
+      {/* Sync only */}
       <button
         onClick={handleSync}
         disabled={generating || syncing}
-        className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors"
+        className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
+        title="Synchroniser sans générer"
       >
-        {syncing ? (
-          <Loader2 className="w-4 h-4 animate-spin" />
-        ) : (
-          <Upload className="w-4 h-4" />
-        )}
-        Shopify
+        <Upload className="w-3.5 h-3.5" />
+        Sync
       </button>
 
       <button
