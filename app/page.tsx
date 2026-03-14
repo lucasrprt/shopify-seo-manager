@@ -190,12 +190,22 @@ export default function DashboardPage() {
   };
 
   const handleApplyCategory = async (ids: number[]) => {
-    const selectedProducts = products.filter((p) => ids.includes(p.shopify.id));
+    // Send only the fields needed for derivation — avoids 413 when selecting all products
+    const slimProducts = products
+      .filter((p) => ids.includes(p.shopify.id))
+      .map((p) => ({
+        id: p.shopify.id,
+        vendor: p.shopify.vendor,
+        tags: p.shopify.tags,
+        options: p.shopify.options ?? [],
+        firstVariantSku: p.shopify.variants?.[0]?.sku ?? "",
+        firstVariantBarcode: p.shopify.variants?.[0]?.barcode ?? "",
+      }));
     try {
       const res = await fetch("/api/shopify/apply-category", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ products: selectedProducts }),
+        body: JSON.stringify({ products: slimProducts }),
       });
       const data = await res.json() as {
         applied: number;

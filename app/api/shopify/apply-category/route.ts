@@ -1,17 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { syncProductToShopify } from "@/lib/shopify";
-import type { EnrichedProduct, SyncPayload } from "@/types";
+import type { SyncPayload } from "@/types";
 
-/** Derive category metafield values from a product's own data (no AI needed).
- *  This replicates what Shopify shows as "Champs méta Catégorie" suggestions:
- *  vendor → brand, variant options → color/size, tags → gender/age group.
- */
-function deriveCategory(p: EnrichedProduct): Partial<SyncPayload["fields"]> {
-  const opts = p.shopify.options ?? [];
-  const colorOpt = opts.find((o) => /colou?r|couleur/i.test(o.name));
-  const sizeOpt = opts.find((o) => /size|taille/i.test(o.name));
+/** Slim product shape — only the fields needed for derivation. */
+interface SlimProduct {
+  id: number;
+  vendor: string;
+  tags: string;
+  options: Array<{ name: string; values: string[] }>;
+  firstVariantSku: string;
+  firstVariantBarcode: string;
+}
 
-  const tags = (p.shopify.tags ?? "")
+function deriveCategory(p: SlimProduct): Partial<SyncPayload["fields"]> {
+  const colorOpt = p.options.find((o) => /colou?r|couleur/i.test(o.name));
+  const sizeOpt = p.options.find((o) => /size|taille/i.test(o.name));
+
+  const tags = (p.tags ?? "")
     .toLowerCase()
     .split(",")
     .map((t) => t.trim())
@@ -27,30 +32,26 @@ function deriveCategory(p: EnrichedProduct): Partial<SyncPayload["fields"]> {
     ["kid", "kids", "enfant", "enfants", "children", "child", "youth", "bébé", "bebe", "baby", "junior"].includes(t)
   );
 
-  const gender = isMale ? "male" : isFemale ? "female" : "unisex";
-  const ageGroup = isKid ? "kids" : "adult";
+  const isValidGtin = /^\d{8}$|^\d{12,14}$/.test(p.firstVariantBarcode);
 
-  const firstVariant = p.shopify.variants?.[0];
-  const barcode = firstVariant?.barcode ?? "";
-  const isValidGtin = /^\d{8}$|^\d{12,14}$/.test(barcode);
+  const fields: Partial<SyncPayload["fields"]> = {
+    googleGender: isMale ? "male" : isFemale ? "female" : "unisex",
+    googleAgeGroup: isKid ? "kids" : "adult",
+    googleCondition: "new",
+  };
 
-  const fields: Partial<SyncPayload["fields"]> = {};
-
-  if (p.shopify.vendor) fields.googleBrand = p.shopify.vendor;
+  if (p.vendor) fields.googleBrand = p.vendor;
   if (colorOpt?.values.length) fields.googleColor = colorOpt.values.join(" / ");
   if (sizeOpt?.values.length) fields.googleSize = sizeOpt.values.join(", ");
-  fields.googleGender = gender;
-  fields.googleAgeGroup = ageGroup;
-  fields.googleCondition = "new";
-  if (firstVariant?.sku) fields.googleMpn = firstVariant.sku;
-  if (isValidGtin) fields.googleGtin = barcode;
+  if (p.firstVariantSku) fields.googleMpn = p.firstVariantSku;
+  if (isValidGtin) fields.googleGtin = p.firstVariantBarcode;
 
   return fields;
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { products } = (await req.json()) as { products: EnrichedProduct[] };
+    const { products } = (await req.json()) as { products: SlimProduct[] };
 
     if (!Array.isArray(products) || products.length === 0) {
       return NextResponse.json({ error: "Aucun produit fourni" }, { status: 400 });
@@ -65,16 +66,11 @@ export async function POST(req: NextRequest) {
     for (const product of products) {
       const fields = deriveCategory(product);
 
-      if (Object.keys(fields).length === 0) {
-        results.push({ productId: product.shopify.id, fields, status: "skipped" });
-        continue;
-      }
-
       try {
-        await syncProductToShopify({ productId: product.shopify.id, fields });
-        results.push({ productId: product.shopify.id, fields, status: "applied" });
+        await syncProductToShopify({ productId: product.id, fields });
+        results.push({ productId: product.id, fields, status: "applied" });
       } catch {
-        results.push({ productId: product.shopify.id, fields, status: "failed" });
+        results.push({ productId: product.id, fields, status: "failed" });
       }
     }
 
