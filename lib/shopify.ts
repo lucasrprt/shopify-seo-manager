@@ -3,21 +3,32 @@ import type {
   ShopifyMetafield,
   EnrichedProduct,
   SyncPayload,
-  GOOGLE_METAFIELD_MAP,
 } from "@/types";
 import { computeHealth } from "./validators";
 
-const SHOPIFY_DOMAIN = process.env.SHOPIFY_SHOP_DOMAIN!;
-const ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN!;
 const API_VERSION = "2024-10";
 
+function getCredentials() {
+  const domain = process.env.SHOPIFY_SHOP_DOMAIN;
+  const token = process.env.SHOPIFY_ACCESS_TOKEN;
+  if (!domain || !token) {
+    throw new Error(
+      "Variables d'environnement manquantes : SHOPIFY_SHOP_DOMAIN et/ou SHOPIFY_ACCESS_TOKEN. " +
+      "Ajoutez-les dans Vercel (Settings → Environment Variables) ou dans votre fichier .env.local."
+    );
+  }
+  return { domain, token };
+}
+
 function shopifyUrl(path: string) {
-  return `https://${SHOPIFY_DOMAIN}/admin/api/${API_VERSION}${path}`;
+  const { domain } = getCredentials();
+  return `https://${domain}/admin/api/${API_VERSION}${path}`;
 }
 
 function shopifyHeaders() {
+  const { token } = getCredentials();
   return {
-    "X-Shopify-Access-Token": ACCESS_TOKEN,
+    "X-Shopify-Access-Token": token,
     "Content-Type": "application/json",
   };
 }
