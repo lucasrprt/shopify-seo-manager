@@ -18,6 +18,10 @@ export function middleware(request: NextRequest) {
   const validToken = process.env.APP_PASSWORD;
 
   if (!validToken || !authCookie || authCookie.value !== validToken) {
+    // API routes: return JSON 401 instead of redirecting to login (avoid HTML parse errors)
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
+    }
     return NextResponse.redirect(new URL("/login", request.url));
   }
 

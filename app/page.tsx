@@ -43,6 +43,7 @@ export default function DashboardPage() {
     try {
       // Phase 1: load products instantly without metafields
       const res = await fetch("/api/shopify/products?meta=false");
+      if (res.status === 401) throw new Error("Session expirée — veuillez vous reconnecter");
       const data = await res.json() as { products?: EnrichedProduct[]; error?: string };
       if (!res.ok || data.error) throw new Error(data.error ?? "Erreur de chargement");
       const basicProducts = data.products ?? [];
