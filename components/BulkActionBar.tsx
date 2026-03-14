@@ -13,6 +13,7 @@ interface BulkActionBarProps {
   onModelChange: (m: AIModel) => void;
   onBulkGenerate: (ids: number[], mode: "full" | "seo" | "google") => Promise<void>;
   onBulkSync: (ids: number[]) => Promise<void>;
+  onBulkGenerateAndSync: (ids: number[], mode: "full" | "seo" | "google") => Promise<void>;
 }
 
 export function BulkActionBar({
@@ -23,6 +24,7 @@ export function BulkActionBar({
   onModelChange,
   onBulkGenerate,
   onBulkSync,
+  onBulkGenerateAndSync,
 }: BulkActionBarProps) {
   const [generating, setGenerating] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -52,15 +54,9 @@ export function BulkActionBar({
   const handleGenerateAndSync = async () => {
     setGenerating(true);
     try {
-      await onBulkGenerate(selected, mode);
+      await onBulkGenerateAndSync(selected, mode);
     } finally {
       setGenerating(false);
-    }
-    setSyncing(true);
-    try {
-      await onBulkSync(selected);
-    } finally {
-      setSyncing(false);
     }
   };
 

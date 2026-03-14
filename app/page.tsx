@@ -123,6 +123,69 @@ export default function DashboardPage() {
     );
   };
 
+  const handleBulkGenerateAndSync = async (ids: number[], mode: "full" | "seo" | "google") => {
+    let success = 0;
+    let failed = 0;
+    const generated: EnrichedProduct[] = [];
+
+    for (const id of ids) {
+      const product = products.find((p) => p.shopify.id === id);
+      if (!product) continue;
+      try {
+        const res = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ product, model, mode }),
+        });
+        const data = await res.json() as { generated?: Partial<GeneratedContent>; error?: string };
+        if (data.generated) {
+          const updated = { ...product, ...data.generated };
+          updated.health = computeHealth(updated);
+          generated.push(updated);
+          setProducts((prev) => prev.map((p) => p.shopify.id === id ? updated : p));
+          success++;
+        } else {
+          failed++;
+        }
+      } catch {
+        failed++;
+      }
+    }
+
+    if (generated.length === 0) {
+      showToast(`Génération échouée`, "error");
+      return;
+    }
+
+    // Sync using freshly generated data (no stale closure issue)
+    const payloads: SyncPayload[] = generated.map((p) => ({
+      productId: p.shopify.id,
+      fields: {
+        seoTitle: p.seoTitle, seoDescription: p.seoDescription, urlHandle: p.urlHandle,
+        description: p.description, googleCategory: p.googleCategory, googleCondition: p.googleCondition,
+        googleAgeGroup: p.googleAgeGroup, googleGender: p.googleGender, googleGtin: p.googleGtin,
+        googleMpn: p.googleMpn, googleBrand: p.googleBrand, googleColor: p.googleColor,
+        googleMaterial: p.googleMaterial, googleSize: p.googleSize, googlePattern: p.googlePattern,
+        googleItemGroupId: p.googleItemGroupId,
+      },
+    }));
+
+    try {
+      const res = await fetch("/api/shopify/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payloads }),
+      });
+      const data = await res.json() as { success?: number; failed?: number };
+      showToast(
+        `Généré ${success} · Synchronisé ${data.success ?? 0}${(data.failed ?? 0) > 0 ? ` · ${data.failed} échoué(s)` : ""}`,
+        (data.failed ?? 0) > 0 || failed > 0 ? "error" : "success"
+      );
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Erreur de synchronisation", "error");
+    }
+  };
+
   const handleBulkSync = async (ids: number[]) => {
     const payloads: SyncPayload[] = ids.map((id) => {
       const p = products.find((pr) => pr.shopify.id === id)!;
@@ -257,6 +320,7 @@ export default function DashboardPage() {
         onModelChange={setModel}
         onBulkGenerate={handleBulkGenerate}
         onBulkSync={handleBulkSync}
+        onBulkGenerateAndSync={handleBulkGenerateAndSync}
       />
 
       {toast && (
