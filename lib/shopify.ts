@@ -68,10 +68,12 @@ export async function fetchAllProducts(): Promise<ShopifyProduct[]> {
 
   while (url) {
     let response = await fetch(shopifyUrl(url), { headers: shopifyHeaders() });
-    if (response.status === 429) {
-      const retryAfter = parseFloat(response.headers.get("Retry-After") ?? "1");
-      await new Promise((r) => setTimeout(r, retryAfter * 1000));
+    let attempt = 0;
+    while (response.status === 429 && attempt < 5) {
+      const retryAfter = parseFloat(response.headers.get("Retry-After") ?? "2");
+      await new Promise((r) => setTimeout(r, retryAfter * 1000 * Math.pow(2, attempt)));
       response = await fetch(shopifyUrl(url), { headers: shopifyHeaders() });
+      attempt++;
     }
     if (!response.ok) throw new Error(`Shopify error ${response.status}`);
 

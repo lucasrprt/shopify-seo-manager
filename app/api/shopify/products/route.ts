@@ -18,8 +18,9 @@ export async function GET(req: Request) {
 
     const products = await fetchAllProducts();
 
-    // Fetch metafields for all products in parallel (batched to avoid rate limits)
-    const BATCH_SIZE = 10;
+    // Fetch metafields sequentially to stay within Shopify's 2 req/sec rate limit
+    const BATCH_SIZE = 2;
+    const DELAY_MS = 1100;
     const enriched: EnrichedProduct[] = [];
 
     for (let i = 0; i < products.length; i += BATCH_SIZE) {
@@ -36,9 +37,8 @@ export async function GET(req: Request) {
       );
       enriched.push(...batchResults);
 
-      // Small delay between batches to respect Shopify rate limits (2 req/s)
       if (i + BATCH_SIZE < products.length) {
-        await new Promise((r) => setTimeout(r, 500));
+        await new Promise((r) => setTimeout(r, DELAY_MS));
       }
     }
 
