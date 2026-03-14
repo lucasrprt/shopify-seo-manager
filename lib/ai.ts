@@ -8,8 +8,19 @@ import {
   buildGoogleOnlyPrompt,
 } from "./prompts";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Lazy singletons — only instantiated at call time, not at module load (build phase)
+let _anthropic: Anthropic | null = null;
+let _openai: OpenAI | null = null;
+
+function getAnthropic(): Anthropic {
+  if (!_anthropic) _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  return _anthropic;
+}
+
+function getOpenAI(): OpenAI {
+  if (!_openai) _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return _openai;
+}
 
 type GenerationMode = "full" | "seo" | "google";
 
@@ -47,7 +58,7 @@ export async function generateWithClaude(
 ): Promise<Partial<GeneratedContent>> {
   const prompt = getPrompt(product, mode);
 
-  const message = await anthropic.messages.create({
+  const message = await getAnthropic().messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 2048,
     system: SYSTEM_PROMPT,
@@ -68,7 +79,7 @@ export async function generateWithOpenAI(
 ): Promise<Partial<GeneratedContent>> {
   const prompt = getPrompt(product, mode);
 
-  const completion = await openai.chat.completions.create({
+  const completion = await getOpenAI().chat.completions.create({
     model: "gpt-4o",
     max_tokens: 2048,
     messages: [
