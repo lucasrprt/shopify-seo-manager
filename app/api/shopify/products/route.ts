@@ -17,32 +17,36 @@ export async function GET(req: Request) {
     }
 
     const products = await fetchAllProducts();
+    const withMeta = url.searchParams.get("meta") !== "false";
 
-    // Fetch metafields sequentially to stay within Shopify's 2 req/sec rate limit
-    const BATCH_SIZE = 2;
-    const DELAY_MS = 1100;
-    const enriched: EnrichedProduct[] = [];
-
-    for (let i = 0; i < products.length; i += BATCH_SIZE) {
-      const batch = products.slice(i, i + BATCH_SIZE);
-      const batchResults = await Promise.all(
-        batch.map(async (product) => {
-          try {
-            const metafields = await fetchProductMetafields(product.id);
-            return enrichProduct(product, metafields);
-          } catch {
-            return enrichProduct(product, []);
-          }
-        })
-      );
-      enriched.push(...batchResults);
-
-      if (i + BATCH_SIZE < products.length) {
-        await new Promise((r) => setTimeout(r, DELAY_MS));
-      }
+    if (!withMeta) {
+      // Fast path: return products without metafields
+      const basic = products.map((p) => enrichProduct(p, []));
+      return NextResponse.json({ products: basic, total: basic.length });
     }
 
-    return NextResponse.json({ products: enriched, total: enriched.length });
+    // Slow path: fetch metafields for a subset (paginated by ?offset=&limit=)
+    const offset = parseInt(url.searchParams.get("offset") ?? "0");
+    const limit = parseInt(url.searchParams.get("limit") ?? "10");
+    const slice = products.slice(offset, offset + limit);
+
+    const enriched: EnrichedProduct[] = [];
+    for (const product of slice) {
+      try {
+        const metafields = await fetchProductMetafields(product.id);
+        enriched.push(enrichProduct(product, metafields));
+      } catch {
+        enriched.push(enrichProduct(product, []));
+      }
+      await new Promise((r) => setTimeout(r, 550)); // ~1.8 req/sec
+    }
+
+    return NextResponse.json({
+      products: enriched,
+      total: products.length,
+      hasMore: offset + limit < products.length,
+      nextOffset: offset + limit,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erreur inconnue";
     return NextResponse.json({ error: message }, { status: 500 });

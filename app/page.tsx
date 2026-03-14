@@ -22,6 +22,8 @@ const DEFAULT_FILTERS: FilterState = {
 export default function DashboardPage() {
   const [products, setProducts] = useState<EnrichedProduct[]>([]);
   const [loading, setLoading] = useState(true);
+  const [enriching, setEnriching] = useState(false);
+  const [enrichProgress, setEnrichProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [selected, setSelected] = useState<number[]>([]);
@@ -36,15 +38,47 @@ export default function DashboardPage() {
   const loadProducts = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setEnriching(false);
+    setEnrichProgress(0);
     try {
-      const res = await fetch("/api/shopify/products");
+      // Phase 1: load products instantly without metafields
+      const res = await fetch("/api/shopify/products?meta=false");
       const data = await res.json() as { products?: EnrichedProduct[]; error?: string };
       if (!res.ok || data.error) throw new Error(data.error ?? "Erreur de chargement");
-      setProducts(data.products ?? []);
+      const basicProducts = data.products ?? [];
+      setProducts(basicProducts);
+      setLoading(false);
+
+      // Phase 2: enrich with metafields in background batches
+      if (basicProducts.length === 0) return;
+      setEnriching(true);
+      const total = basicProducts.length;
+      const batchSize = 10;
+      let offset = 0;
+
+      while (offset < total) {
+        const r = await fetch(`/api/shopify/products?meta=true&offset=${offset}&limit=${batchSize}`);
+        const d = await r.json() as { products?: EnrichedProduct[]; hasMore?: boolean; nextOffset?: number };
+        if (d.products) {
+          setProducts((prev) => {
+            const updated = [...prev];
+            d.products!.forEach((enriched) => {
+              const idx = updated.findIndex((p) => p.shopify.id === enriched.shopify.id);
+              if (idx !== -1) updated[idx] = enriched;
+            });
+            return updated;
+          });
+        }
+        offset = d.nextOffset ?? (offset + batchSize);
+        setEnrichProgress(Math.min(100, Math.round((offset / total) * 100)));
+        if (d.hasMore === false) break;
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur inconnue");
     } finally {
       setLoading(false);
+      setEnriching(false);
+      setEnrichProgress(100);
     }
   }, []);
 
@@ -185,11 +219,23 @@ export default function DashboardPage() {
           <div className="flex flex-col items-center justify-center py-20 text-gray-400">
             <Loader2 className="w-10 h-10 animate-spin mb-4 text-blue-500" />
             <p className="text-lg font-medium text-gray-600">Chargement des produits...</p>
-            <p className="text-sm mt-1">Récupération des données Shopify et des métachamps</p>
+            <p className="text-sm mt-1">Connexion à Shopify en cours</p>
           </div>
         )}
 
-        {!loading && !error && (
+        {enriching && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-center gap-3">
+            <Loader2 className="w-4 h-4 animate-spin text-blue-500 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-blue-800">Calcul des scores SEO en cours... {enrichProgress}%</p>
+              <div className="mt-1.5 bg-blue-200 rounded-full h-1.5">
+                <div className="bg-blue-500 h-1.5 rounded-full transition-all duration-500" style={{ width: `${enrichProgress}%` }} />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!loading && !error && products.length > 0 && (
           <>
             <ProductFilters filters={filters} onChange={setFilters} products={products} />
             <ProductTable
