@@ -166,66 +166,34 @@ const GOOGLE_METAFIELD_KEY_MAP: Record<string, string> = {
 
 export async function syncProductToShopify(payload: SyncPayload): Promise<void> {
   const { productId, fields } = payload;
-  const updates: Promise<unknown>[] = [];
 
-  // Update product body & handle
-  const productUpdate: Record<string, string> = {};
-  if (fields.description !== undefined) productUpdate.body_html = fields.description;
-  if (fields.urlHandle !== undefined) productUpdate.handle = fields.urlHandle;
+  // Build the metafields array for upsert (Shopify creates or updates by namespace+key)
+  const metafields: ShopifyMetafield[] = [];
 
-  if (Object.keys(productUpdate).length > 0) {
-    updates.push(
-      shopifyFetch(`/products/${productId}.json`, {
-        method: "PUT",
-        body: JSON.stringify({ product: { id: productId, ...productUpdate } }),
-      })
-    );
+  if (fields.seoTitle !== undefined && fields.seoTitle !== "") {
+    metafields.push({ namespace: "global", key: "title_tag", value: fields.seoTitle, type: "single_line_text_field" });
   }
-
-  // SEO metafields (global namespace)
-  const seoMetafields: ShopifyMetafield[] = [];
-  if (fields.seoTitle !== undefined) {
-    seoMetafields.push({ namespace: "global", key: "title_tag", value: fields.seoTitle, type: "single_line_text_field" });
+  if (fields.seoDescription !== undefined && fields.seoDescription !== "") {
+    metafields.push({ namespace: "global", key: "description_tag", value: fields.seoDescription, type: "single_line_text_field" });
   }
-  if (fields.seoDescription !== undefined) {
-    seoMetafields.push({ namespace: "global", key: "description_tag", value: fields.seoDescription, type: "single_line_text_field" });
-  }
-
-  // Google Merchant metafields
-  const googleMetafields: ShopifyMetafield[] = [];
   for (const [fieldKey, metafieldKey] of Object.entries(GOOGLE_METAFIELD_KEY_MAP)) {
     const value = fields[fieldKey as keyof typeof fields];
     if (value !== undefined && value !== "") {
-      googleMetafields.push({
-        namespace: "google",
-        key: metafieldKey,
-        value: value as string,
-        type: "single_line_text_field",
-      });
+      metafields.push({ namespace: "google", key: metafieldKey, value: value as string, type: "single_line_text_field" });
     }
   }
 
-  const allMetafields = [...seoMetafields, ...googleMetafields];
-  if (allMetafields.length > 0) {
-    updates.push(
-      shopifyFetch(`/products/${productId}/metafields.json`, {
-        method: "POST",
-        body: JSON.stringify({ metafield: allMetafields[0] }),
-      })
-    );
+  // Build the product update body (description + handle + metafields all in one PUT)
+  const productBody: Record<string, unknown> = { id: productId };
+  if (fields.description !== undefined && fields.description !== "") productBody.body_html = fields.description;
+  if (fields.urlHandle !== undefined && fields.urlHandle !== "") productBody.handle = fields.urlHandle;
+  if (metafields.length > 0) productBody.metafields = metafields;
 
-    // Shopify requires one metafield per request, so batch them
-    for (const metafield of allMetafields) {
-      updates.push(
-        shopifyFetch(`/products/${productId}/metafields.json`, {
-          method: "POST",
-          body: JSON.stringify({ metafield }),
-        })
-      );
-    }
-  }
-
-  await Promise.allSettled(updates);
+  // Single PUT — Shopify upserts metafields by namespace+key (no 422 on existing fields)
+  await shopifyFetch(`/products/${productId}.json`, {
+    method: "PUT",
+    body: JSON.stringify({ product: productBody }),
+  });
 }
 
 export async function syncMultipleProducts(payloads: SyncPayload[]): Promise<{
@@ -233,20 +201,22 @@ export async function syncMultipleProducts(payloads: SyncPayload[]): Promise<{
   failed: number;
   errors: string[];
 }> {
-  const results = await Promise.allSettled(
-    payloads.map((p) => syncProductToShopify(p))
-  );
-
   let success = 0;
   let failed = 0;
   const errors: string[] = [];
 
-  for (const result of results) {
-    if (result.status === "fulfilled") {
+  // Sequential with a small delay — avoids flooding Shopify's rate limit (40 req/s bucket)
+  for (const payload of payloads) {
+    try {
+      await syncProductToShopify(payload);
       success++;
-    } else {
+    } catch (err) {
       failed++;
-      errors.push(result.reason?.message ?? "Unknown error");
+      errors.push(err instanceof Error ? err.message : "Unknown error");
+    }
+    // ~600ms between products → stays well under Shopify's 2 req/s sustained limit
+    if (payloads.length > 1) {
+      await new Promise((r) => setTimeout(r, 600));
     }
   }
 
