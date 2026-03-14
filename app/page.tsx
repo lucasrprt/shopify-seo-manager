@@ -189,6 +189,43 @@ export default function DashboardPage() {
     }
   };
 
+  const handleApplyCategory = async (ids: number[]) => {
+    const selectedProducts = products.filter((p) => ids.includes(p.shopify.id));
+    try {
+      const res = await fetch("/api/shopify/apply-category", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ products: selectedProducts }),
+      });
+      const data = await res.json() as {
+        applied: number;
+        skipped: number;
+        failed: number;
+        results: Array<{ productId: number; fields: Record<string, string>; status: string }>;
+      };
+
+      if (data.results) {
+        setProducts((prev) =>
+          prev.map((p) => {
+            const result = data.results.find((r) => r.productId === p.shopify.id);
+            if (!result || result.status !== "applied") return p;
+            const updated = { ...p, ...result.fields };
+            updated.health = computeHealth(updated);
+            return updated;
+          })
+        );
+      }
+
+      const parts: string[] = [];
+      if (data.applied > 0) parts.push(`${data.applied} appliqué${data.applied > 1 ? "s" : ""}`);
+      if (data.skipped > 0) parts.push(`${data.skipped} ignoré${data.skipped > 1 ? "s" : ""}`);
+      if (data.failed > 0) parts.push(`${data.failed} échoué${data.failed > 1 ? "s" : ""}`);
+      showToast(`Champs catégorie : ${parts.join(", ")}`, data.failed > 0 ? "error" : "success");
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Erreur", "error");
+    }
+  };
+
   const handleBulkSync = async (ids: number[]) => {
     const payloads: SyncPayload[] = ids.map((id) => {
       const p = products.find((pr) => pr.shopify.id === id)!;
@@ -324,6 +361,7 @@ export default function DashboardPage() {
         onBulkGenerate={handleBulkGenerate}
         onBulkSync={handleBulkSync}
         onBulkGenerateAndSync={handleBulkGenerateAndSync}
+        onApplyCategory={handleApplyCategory}
       />
 
       {toast && (

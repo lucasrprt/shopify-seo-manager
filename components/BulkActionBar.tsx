@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { EnrichedProduct, AIModel } from "@/types";
-import { Zap, Upload, X, Loader2, ChevronDown } from "lucide-react";
+import { Zap, Upload, X, Loader2, ChevronDown, Tag } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface BulkActionBarProps {
@@ -14,6 +14,7 @@ interface BulkActionBarProps {
   onBulkGenerate: (ids: number[], mode: "full" | "seo" | "google") => Promise<void>;
   onBulkSync: (ids: number[]) => Promise<void>;
   onBulkGenerateAndSync: (ids: number[], mode: "full" | "seo" | "google") => Promise<void>;
+  onApplyCategory: (ids: number[]) => Promise<void>;
 }
 
 export function BulkActionBar({
@@ -25,9 +26,11 @@ export function BulkActionBar({
   onBulkGenerate,
   onBulkSync,
   onBulkGenerateAndSync,
+  onApplyCategory,
 }: BulkActionBarProps) {
   const [generating, setGenerating] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [applyingCategory, setApplyingCategory] = useState(false);
   const [mode, setMode] = useState<"full" | "seo" | "google">("full");
   const [modeOpen, setModeOpen] = useState(false);
 
@@ -60,7 +63,17 @@ export function BulkActionBar({
     }
   };
 
+  const handleApplyCategory = async () => {
+    setApplyingCategory(true);
+    try {
+      await onApplyCategory(selected);
+    } finally {
+      setApplyingCategory(false);
+    }
+  };
+
   const modeLabels = { full: "Tout générer", seo: "SEO seulement", google: "Google seulement" };
+  const busy = generating || syncing || applyingCategory;
 
   return (
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-gray-900 text-white px-5 py-3 rounded-2xl shadow-2xl border border-gray-700">
@@ -113,10 +126,26 @@ export function BulkActionBar({
         )}
       </div>
 
+      <div className="w-px h-5 bg-gray-600" />
+
+      {/* Apply category suggestions */}
+      <button
+        onClick={handleApplyCategory}
+        disabled={busy}
+        className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
+        title="Appliquer les champs méta Catégorie depuis les données produit (marque, couleur, taille, genre...)"
+      >
+        {applyingCategory ? (
+          <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Catégorie...</>
+        ) : (
+          <><Tag className="w-3.5 h-3.5" /> Champs catégorie</>
+        )}
+      </button>
+
       {/* Generate + Sync (primary) */}
       <button
         onClick={handleGenerateAndSync}
-        disabled={generating || syncing}
+        disabled={busy}
         className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors font-medium"
       >
         {generating ? (
@@ -131,7 +160,7 @@ export function BulkActionBar({
       {/* Generate only */}
       <button
         onClick={handleGenerate}
-        disabled={generating || syncing}
+        disabled={busy}
         className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
         title="Générer sans synchroniser"
       >
@@ -142,7 +171,7 @@ export function BulkActionBar({
       {/* Sync only */}
       <button
         onClick={handleSync}
-        disabled={generating || syncing}
+        disabled={busy}
         className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
         title="Synchroniser sans générer"
       >
