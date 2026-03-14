@@ -190,47 +190,47 @@ export default function DashboardPage() {
   };
 
   const handleApplyCategory = async (ids: number[]) => {
-    // Send only the fields needed for derivation — avoids 413 when selecting all products
+    // Slim payload — avoids 413 when selecting all products
     const slimProducts = products
       .filter((p) => ids.includes(p.shopify.id))
       .map((p) => ({
         id: p.shopify.id,
+        title: p.shopify.title,
         vendor: p.shopify.vendor,
+        productType: p.shopify.product_type,
         tags: p.shopify.tags,
         options: p.shopify.options ?? [],
-        firstVariantSku: p.shopify.variants?.[0]?.sku ?? "",
-        firstVariantBarcode: p.shopify.variants?.[0]?.barcode ?? "",
+        variants: (p.shopify.variants ?? []).map((v) => ({
+          sku: v.sku,
+          barcode: v.barcode ?? "",
+          option1: v.option1,
+          option2: v.option2,
+        })),
       }));
     try {
-      const res = await fetch("/api/shopify/apply-category", {
+      const res = await fetch("/api/shopify/fill-category", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ products: slimProducts }),
+        body: JSON.stringify({ products: slimProducts, model }),
       });
+      if (res.status === 401) throw new Error("Session expirée — veuillez vous reconnecter");
       const data = await res.json() as {
         applied: number;
-        skipped: number;
         failed: number;
-        results: Array<{ productId: number; fields: Record<string, string>; status: string }>;
+        totalTaxonomy: number;
+        error?: string;
       };
 
-      if (data.results) {
-        setProducts((prev) =>
-          prev.map((p) => {
-            const result = data.results.find((r) => r.productId === p.shopify.id);
-            if (!result || result.status !== "applied") return p;
-            const updated = { ...p, ...result.fields };
-            updated.health = computeHealth(updated);
-            return updated;
-          })
-        );
-      }
+      if (data.error) throw new Error(data.error);
 
       const parts: string[] = [];
-      if (data.applied > 0) parts.push(`${data.applied} appliqué${data.applied > 1 ? "s" : ""}`);
-      if (data.skipped > 0) parts.push(`${data.skipped} ignoré${data.skipped > 1 ? "s" : ""}`);
+      if (data.applied > 0) parts.push(`${data.applied} produit${data.applied > 1 ? "s" : ""} mis à jour`);
+      if (data.totalTaxonomy > 0) parts.push(`${data.totalTaxonomy} champ${data.totalTaxonomy > 1 ? "s" : ""} catégorie rempli${data.totalTaxonomy > 1 ? "s" : ""} par l'IA`);
       if (data.failed > 0) parts.push(`${data.failed} échoué${data.failed > 1 ? "s" : ""}`);
-      showToast(`Champs catégorie : ${parts.join(", ")}`, data.failed > 0 ? "error" : "success");
+      showToast(
+        parts.length > 0 ? parts.join(" · ") : "Aucun changement",
+        data.failed > 0 ? "error" : "success"
+      );
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Erreur", "error");
     }

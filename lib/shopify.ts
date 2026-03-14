@@ -196,6 +196,83 @@ export async function syncProductToShopify(payload: SyncPayload): Promise<void> 
   });
 }
 
+// ─── GraphQL (metafield definitions + current values) ─────────────────────────
+
+export interface MetafieldDefinition {
+  namespace: string;
+  key: string;
+  name: string;
+  typeName: string;
+  choices: string[];
+}
+
+export async function shopifyGraphQL<T>(
+  query: string,
+  variables: Record<string, unknown> = {}
+): Promise<T> {
+  const { domain, token } = getCredentials();
+  const res = await fetch(`https://${domain}/admin/api/${API_VERSION}/graphql.json`, {
+    method: "POST",
+    headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" },
+    body: JSON.stringify({ query, variables }),
+  });
+  if (!res.ok) throw new Error(`Shopify GraphQL ${res.status}: ${await res.text()}`);
+  const data = await res.json() as { data: T; errors?: Array<{ message: string }> };
+  if (data.errors?.length) throw new Error(`GraphQL: ${data.errors.map((e) => e.message).join(", ")}`);
+  return data.data;
+}
+
+/** Fetches all product metafield definitions defined in the store. */
+export async function fetchMetafieldDefinitions(): Promise<MetafieldDefinition[]> {
+  const data = await shopifyGraphQL<{
+    metafieldDefinitions: {
+      nodes: Array<{
+        namespace: string;
+        key: string;
+        name: string;
+        type: { name: string };
+        validations: Array<{ name: string; value: string }>;
+      }>;
+    };
+  }>(`{
+    metafieldDefinitions(ownerType: PRODUCT, first: 250) {
+      nodes { namespace key name type { name } validations { name value } }
+    }
+  }`);
+
+  return data.metafieldDefinitions.nodes.map((d) => {
+    const cv = d.validations.find((v) => v.name === "choices");
+    let choices: string[] = [];
+    if (cv?.value) { try { choices = JSON.parse(cv.value) as string[]; } catch { /* ignore */ } }
+    return { namespace: d.namespace, key: d.key, name: d.name, typeName: d.type.name, choices };
+  });
+}
+
+/** Fetches the metafields currently set on a single product (all namespaces). */
+export async function fetchProductCurrentMetafields(
+  productId: number
+): Promise<Array<{ namespace: string; key: string; value: string }>> {
+  const data = await shopifyGraphQL<{
+    product: { metafields: { nodes: Array<{ namespace: string; key: string; value: string }> } };
+  }>(`query($id: ID!) {
+    product(id: $id) { metafields(first: 250) { nodes { namespace key value } } }
+  }`, { id: `gid://shopify/Product/${productId}` });
+  return data.product.metafields.nodes;
+}
+
+/** Writes arbitrary metafields to a product (upsert by namespace+key). */
+export async function syncRawMetafields(
+  productId: number,
+  metafields: Array<{ namespace: string; key: string; value: string; type: string }>
+): Promise<void> {
+  await shopifyFetch(`/products/${productId}.json`, {
+    method: "PUT",
+    body: JSON.stringify({ product: { id: productId, metafields } }),
+  });
+}
+
+// ─── Bulk sync ─────────────────────────────────────────────────────────────────
+
 export async function syncMultipleProducts(payloads: SyncPayload[]): Promise<{
   success: number;
   failed: number;

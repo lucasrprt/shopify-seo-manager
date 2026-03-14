@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import type { EnrichedProduct, GeneratedContent, AIModel } from "@/types";
+import type { MetafieldDefinition } from "./shopify";
 import {
   SYSTEM_PROMPT,
   buildFullGenerationPrompt,
@@ -102,4 +103,112 @@ export async function generateContent(
     return generateWithClaude(product, mode);
   }
   return generateWithOpenAI(product, mode);
+}
+
+// ─── Category metafield AI generation ─────────────────────────────────────────
+
+export interface CategoryFieldValue {
+  namespace: string;
+  key: string;
+  value: string;
+}
+
+export interface ProductSlimForCategory {
+  title: string;
+  vendor: string;
+  productType: string;
+  tags: string;
+  options: Array<{ name: string; values: string[] }>;
+  variantTitles: string[];
+}
+
+function buildCategoryPrompt(product: ProductSlimForCategory, defs: MetafieldDefinition[]): string {
+  const defLines = defs
+    .map((d) => {
+      const choices = d.choices.length > 0 ? ` | Choix valides: ${d.choices.join(", ")}` : "";
+      const listNote = d.typeName.startsWith("list.") ? ' (liste → sérialiser: ["val1","val2"])' : "";
+      return `  "${d.namespace}:${d.key}" → ${d.name}${listNote}${choices}`;
+    })
+    .join("\n");
+
+  const ctx = JSON.stringify(
+    {
+      titre: product.title,
+      marque: product.vendor,
+      type_produit: product.productType,
+      tags: product.tags,
+      options: product.options.map((o) => `${o.name}: ${o.values.join(", ")}`),
+      variantes: product.variantTitles.slice(0, 8),
+    },
+    null,
+    2
+  );
+
+  return `Remplis les champs métadonnées Catégorie Shopify de ce produit de mode.
+
+## Données produit
+${ctx}
+
+## Champs vides à remplir
+${defLines}
+
+## Règles
+- Retourne {"fields":[{"namespace":"...","key":"...","value":"..."},...]}
+- Pour les types liste: value = tableau JSON sérialisé, ex: "[\\\"Cuir\\\",\\\"Textile\\\"]"
+- Pour les champs avec "Choix valides": utilise EXACTEMENT l'une des valeurs listées
+- N'inclus que les champs que tu peux inférer avec confiance depuis les données produit`;
+}
+
+function parseCategoryResponse(raw: string): CategoryFieldValue[] {
+  const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const jsonStr = fence ? fence[1] : raw;
+  try {
+    const parsed = JSON.parse(jsonStr.trim()) as
+      | { fields?: CategoryFieldValue[] }
+      | CategoryFieldValue[];
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && "fields" in parsed && Array.isArray(parsed.fields)) return parsed.fields;
+    return [];
+  } catch {
+    const arrMatch = jsonStr.match(/\[[\s\S]*?\]/);
+    if (arrMatch) {
+      try { return JSON.parse(arrMatch[0]) as CategoryFieldValue[]; } catch { /* ignore */ }
+    }
+    return [];
+  }
+}
+
+export async function generateCategoryFieldValues(
+  product: ProductSlimForCategory,
+  defs: MetafieldDefinition[],
+  model: AIModel
+): Promise<CategoryFieldValue[]> {
+  if (defs.length === 0) return [];
+  const prompt = buildCategoryPrompt(product, defs);
+  const systemMsg = "Expert e-commerce. Réponds uniquement avec un JSON valide.";
+
+  if (model === "claude") {
+    const msg = await getAnthropic().messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1024,
+      system: systemMsg,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const text = msg.content
+      .filter((b) => b.type === "text")
+      .map((b) => (b as { type: "text"; text: string }).text)
+      .join("");
+    return parseCategoryResponse(text);
+  }
+
+  const completion = await getOpenAI().chat.completions.create({
+    model: "gpt-4o",
+    max_tokens: 1024,
+    messages: [
+      { role: "system", content: systemMsg },
+      { role: "user", content: prompt },
+    ],
+    response_format: { type: "json_object" },
+  });
+  return parseCategoryResponse(completion.choices[0]?.message?.content ?? "{}");
 }
