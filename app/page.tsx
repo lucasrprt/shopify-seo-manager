@@ -27,7 +27,7 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [selected, setSelected] = useState<number[]>([]);
-  const [model, setModel] = useState<AIModel>("claude");
+  const [model, setModel] = useState<AIModel>("openai");
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
   const showToast = (msg: string, type: "success" | "error" = "success") => {
@@ -126,6 +126,7 @@ export default function DashboardPage() {
   const handleBulkGenerateAndSync = async (ids: number[], mode: "full" | "seo" | "google") => {
     let success = 0;
     let failed = 0;
+    let lastError = "";
     const generated: EnrichedProduct[] = [];
 
     for (const id of ids) {
@@ -145,15 +146,17 @@ export default function DashboardPage() {
           setProducts((prev) => prev.map((p) => p.shopify.id === id ? updated : p));
           success++;
         } else {
+          lastError = data.error ?? "Erreur inconnue";
           failed++;
         }
-      } catch {
+      } catch (e) {
+        lastError = e instanceof Error ? e.message : "Erreur réseau";
         failed++;
       }
     }
 
     if (generated.length === 0) {
-      showToast(`Génération échouée`, "error");
+      showToast(`Génération échouée : ${lastError}`, "error");
       return;
     }
 
