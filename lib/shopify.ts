@@ -35,7 +35,8 @@ function shopifyHeaders() {
 
 async function shopifyFetch<T>(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  retries = 3
 ): Promise<T> {
   const res = await fetch(shopifyUrl(path), {
     ...options,
@@ -44,6 +45,12 @@ async function shopifyFetch<T>(
       ...(options.headers ?? {}),
     },
   });
+
+  if (res.status === 429 && retries > 0) {
+    const retryAfter = parseFloat(res.headers.get("Retry-After") ?? "1");
+    await new Promise((r) => setTimeout(r, retryAfter * 1000));
+    return shopifyFetch<T>(path, options, retries - 1);
+  }
 
   if (!res.ok) {
     const text = await res.text();
@@ -60,7 +67,12 @@ export async function fetchAllProducts(): Promise<ShopifyProduct[]> {
   let url = "/products.json?limit=250&fields=id,title,vendor,product_type,body_html,handle,status,tags,images,variants,options,created_at,updated_at";
 
   while (url) {
-    const response = await fetch(shopifyUrl(url), { headers: shopifyHeaders() });
+    let response = await fetch(shopifyUrl(url), { headers: shopifyHeaders() });
+    if (response.status === 429) {
+      const retryAfter = parseFloat(response.headers.get("Retry-After") ?? "1");
+      await new Promise((r) => setTimeout(r, retryAfter * 1000));
+      response = await fetch(shopifyUrl(url), { headers: shopifyHeaders() });
+    }
     if (!response.ok) throw new Error(`Shopify error ${response.status}`);
 
     const data = (await response.json()) as { products: ShopifyProduct[] };
