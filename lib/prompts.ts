@@ -6,7 +6,6 @@ export function buildProductContext(product: EnrichedProduct): string {
     titre: v.title,
     prix: v.price,
     sku: v.sku,
-    stock: v.inventory_quantity,
     option1: v.option1,
     option2: v.option2,
     barcode: v.barcode,
@@ -57,7 +56,7 @@ Retourne UNIQUEMENT un objet JSON valide avec cette structure exacte (pas de tex
   "seoTitle": "Titre SEO optimisé (20-60 caractères, avec le nom du produit et mots-clés)",
   "seoDescription": "Description meta SEO engageante (50-160 caractères, avec call-to-action)",
   "urlHandle": "url-produit-en-tirets-sans-accents",
-  "description": "<p>Description HTML complète du produit en français (200-500 mots). Utilise des balises <p>, <ul>, <li>, <strong>. Mets en avant les caractéristiques, avantages et usage.</p>",
+  "description": "<p>Description HTML complète du produit en français (200-500 mots). Utilise des balises <p>, <ul>, <li>, <strong>. Mets en avant les caractéristiques, avantages et usage. NE MENTIONNE PAS les tailles disponibles, le stock, la disponibilité ou les quantités.</p>",
   "googleCategory": "Catégorie Google Merchant (ex: Vêtements et accessoires > Vêtements > Chemises)",
   "googleCondition": "new",
   "googleAgeGroup": "adult",
@@ -78,7 +77,8 @@ Règles importantes :
 - googleGender DOIT être "male", "female" ou "unisex"
 - urlHandle DOIT être en minuscules avec des tirets, sans accents ni caractères spéciaux
 - Si une information n'est pas disponible, utilise une chaîne vide ""
-- N'invente pas de GTIN, laisse vide si non disponible`;
+- N'invente pas de GTIN, laisse vide si non disponible
+- Dans la description, NE MENTIONNE JAMAIS les tailles en stock, la disponibilité, les quantités ou les pointures disponibles : ces informations changent constamment`;
 }
 
 export function buildSeoOnlyPrompt(product: EnrichedProduct): string {
@@ -95,7 +95,7 @@ Retourne UNIQUEMENT un objet JSON valide :
   "seoTitle": "Titre SEO optimisé (20-60 caractères)",
   "seoDescription": "Description meta (50-160 caractères)",
   "urlHandle": "url-en-tirets",
-  "description": "<p>Description HTML complète en français...</p>"
+  "description": "<p>Description HTML complète en français (sans mention de stock, tailles disponibles ou disponibilité)...</p>"
 }`;
 }
 

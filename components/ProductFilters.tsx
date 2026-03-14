@@ -14,6 +14,13 @@ export function ProductFilters({ filters, onChange, products }: ProductFiltersPr
   const vendors = [...new Set(products.map((p) => p.shopify.vendor).filter(Boolean))].sort();
   const types = [...new Set(products.map((p) => p.shopify.product_type).filter(Boolean))].sort();
 
+  const statusCounts = {
+    all: products.length,
+    active: products.filter((p) => p.shopify.status === "active").length,
+    draft: products.filter((p) => p.shopify.status === "draft").length,
+    archived: products.filter((p) => p.shopify.status === "archived").length,
+  };
+
   const set = <K extends keyof FilterState>(key: K, value: FilterState[K]) =>
     onChange({ ...filters, [key]: value });
 
@@ -74,16 +81,36 @@ export function ProductFilters({ filters, onChange, products }: ProductFiltersPr
         {/* Status */}
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Statut</label>
-          <select
-            value={filters.status}
-            onChange={(e) => set("status", e.target.value as FilterState["status"])}
-            className="text-sm border border-gray-300 rounded-lg px-3 py-1 focus:outline-none focus:ring-2 focus:ring-blue-300"
-          >
-            <option value="all">Tous</option>
-            <option value="active">Actif</option>
-            <option value="draft">Brouillon</option>
-            <option value="archived">Archivé</option>
-          </select>
+          <div className="flex gap-1">
+            {([
+              { value: "all", label: "Tous", color: "blue" },
+              { value: "active", label: "Actif", color: "green" },
+              { value: "draft", label: "Brouillon", color: "yellow" },
+              { value: "archived", label: "Archivé", color: "gray" },
+            ] as const).map(({ value, label, color }) => (
+              <button
+                key={value}
+                onClick={() => set("status", value)}
+                className={cn(
+                  "px-3 py-1 text-xs rounded-full border transition-colors flex items-center gap-1",
+                  filters.status === value
+                    ? color === "green" ? "bg-green-600 text-white border-green-600"
+                      : color === "yellow" ? "bg-yellow-500 text-white border-yellow-500"
+                      : color === "gray" ? "bg-gray-500 text-white border-gray-500"
+                      : "bg-blue-600 text-white border-blue-600"
+                    : "bg-white text-gray-600 border-gray-300 hover:border-blue-400"
+                )}
+              >
+                {label}
+                <span className={cn(
+                  "text-[10px] font-semibold px-1 rounded-full",
+                  filters.status === value ? "bg-white/20" : "bg-gray-100 text-gray-500"
+                )}>
+                  {statusCounts[value]}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Vendor */}
