@@ -6,6 +6,7 @@ import { ProductTable } from "@/components/ProductTable";
 import { ProductFilters } from "@/components/ProductFilters";
 import { BulkActionBar } from "@/components/BulkActionBar";
 import { HealthBadge } from "@/components/HealthBadge";
+import { ProgressPanel, type ProgressItem } from "@/components/ProgressPanel";
 import { RefreshCw, ShoppingBag, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { computeHealth } from "@/lib/validators";
 
@@ -29,10 +30,39 @@ export default function DashboardPage() {
   const [selected, setSelected] = useState<number[]>([]);
   const [model, setModel] = useState<AIModel>("openai");
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const [progress, setProgress] = useState<{
+    visible: boolean;
+    operation: string;
+    items: ProgressItem[];
+  }>({ visible: false, operation: "", items: [] });
 
   const showToast = (msg: string, type: "success" | "error" = "success") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 4000);
+  };
+
+  /** Open the progress panel with all products as "pending". */
+  const initProgress = (ids: number[], operation: string) => {
+    setProgress({
+      visible: true,
+      operation,
+      items: ids.map((id) => ({
+        id,
+        name: products.find((p) => p.shopify.id === id)?.shopify.title ?? `Produit #${id}`,
+        status: "pending",
+        step: "En attente…",
+      })),
+    });
+  };
+
+  /** Update a single product row in the progress panel. */
+  const tickProgress = (id: number, status: ProgressItem["status"], step: string) => {
+    setProgress((prev) => ({
+      ...prev,
+      items: prev.items.map((item) =>
+        item.id === id ? { ...item, status, step } : item
+      ),
+    }));
   };
 
   const loadProducts = useCallback(async () => {
@@ -124,76 +154,76 @@ export default function DashboardPage() {
   };
 
   const handleBulkGenerateAndSync = async (ids: number[], mode: "full" | "seo" | "google") => {
+    initProgress(ids, "Générer & Synchroniser");
     let success = 0;
     let failed = 0;
-    let lastError = "";
-    const generated: EnrichedProduct[] = [];
 
     for (const id of ids) {
       const product = products.find((p) => p.shopify.id === id);
-      if (!product) continue;
+      if (!product) { tickProgress(id, "error", "Produit introuvable"); failed++; continue; }
+
       try {
+        tickProgress(id, "active", "Génération IA…");
         const res = await fetch("/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ product, model, mode }),
         });
+        if (res.status === 401) throw new Error("Session expirée");
         const data = await res.json() as { generated?: Partial<GeneratedContent>; error?: string };
-        if (data.generated) {
-          const updated = { ...product, ...data.generated };
-          updated.health = computeHealth(updated);
-          generated.push(updated);
-          setProducts((prev) => prev.map((p) => p.shopify.id === id ? updated : p));
-          success++;
-        } else {
-          lastError = data.error ?? "Erreur inconnue";
-          failed++;
-        }
+        if (!data.generated) throw new Error(data.error ?? "Erreur génération");
+
+        const updated = { ...product, ...data.generated };
+        updated.health = computeHealth(updated);
+        setProducts((prev) => prev.map((p) => p.shopify.id === id ? updated : p));
+
+        tickProgress(id, "active", "Sync Shopify…");
+        const syncRes = await fetch("/api/shopify/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            payloads: [{
+              productId: id,
+              fields: {
+                seoTitle: updated.seoTitle, seoDescription: updated.seoDescription,
+                urlHandle: updated.urlHandle, description: updated.description,
+                googleCategory: updated.googleCategory, googleCondition: updated.googleCondition,
+                googleAgeGroup: updated.googleAgeGroup, googleGender: updated.googleGender,
+                googleGtin: updated.googleGtin, googleMpn: updated.googleMpn,
+                googleBrand: updated.googleBrand, googleColor: updated.googleColor,
+                googleMaterial: updated.googleMaterial, googleSize: updated.googleSize,
+                googlePattern: updated.googlePattern, googleItemGroupId: updated.googleItemGroupId,
+              },
+            }],
+          }),
+        });
+        const syncData = await syncRes.json() as { success?: number; failed?: number };
+        if ((syncData.failed ?? 0) > 0) throw new Error("Échec sync Shopify");
+
+        tickProgress(id, "done", "Généré & synchronisé ✓");
+        success++;
       } catch (e) {
-        lastError = e instanceof Error ? e.message : "Erreur réseau";
+        tickProgress(id, "error", e instanceof Error ? e.message : "Erreur");
         failed++;
       }
     }
 
-    if (generated.length === 0) {
-      showToast(`Génération échouée : ${lastError}`, "error");
-      return;
-    }
-
-    // Sync using freshly generated data (no stale closure issue)
-    const payloads: SyncPayload[] = generated.map((p) => ({
-      productId: p.shopify.id,
-      fields: {
-        seoTitle: p.seoTitle, seoDescription: p.seoDescription, urlHandle: p.urlHandle,
-        description: p.description, googleCategory: p.googleCategory, googleCondition: p.googleCondition,
-        googleAgeGroup: p.googleAgeGroup, googleGender: p.googleGender, googleGtin: p.googleGtin,
-        googleMpn: p.googleMpn, googleBrand: p.googleBrand, googleColor: p.googleColor,
-        googleMaterial: p.googleMaterial, googleSize: p.googleSize, googlePattern: p.googlePattern,
-        googleItemGroupId: p.googleItemGroupId,
-      },
-    }));
-
-    try {
-      const res = await fetch("/api/shopify/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payloads }),
-      });
-      const data = await res.json() as { success?: number; failed?: number };
-      showToast(
-        `Généré ${success} · Synchronisé ${data.success ?? 0}${(data.failed ?? 0) > 0 ? ` · ${data.failed} échoué(s)` : ""}`,
-        (data.failed ?? 0) > 0 || failed > 0 ? "error" : "success"
-      );
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : "Erreur de synchronisation", "error");
-    }
+    showToast(
+      `${success} généré${success !== 1 ? "s" : ""} & synchronisé${success !== 1 ? "s" : ""}${failed > 0 ? ` · ${failed} échoué${failed !== 1 ? "s" : ""}` : ""}`,
+      failed > 0 ? "error" : "success"
+    );
   };
 
   const handleApplyCategory = async (ids: number[]) => {
-    // Slim payload — avoids 413 when selecting all products
-    const slimProducts = products
-      .filter((p) => ids.includes(p.shopify.id))
-      .map((p) => ({
+    initProgress(ids, "Champs catégorie");
+    let applied = 0;
+    let failed = 0;
+
+    for (const id of ids) {
+      const p = products.find((pr) => pr.shopify.id === id);
+      if (!p) { tickProgress(id, "error", "Produit introuvable"); failed++; continue; }
+
+      const slim = {
         id: p.shopify.id,
         title: p.shopify.title,
         vendor: p.shopify.vendor,
@@ -201,45 +231,48 @@ export default function DashboardPage() {
         tags: p.shopify.tags,
         options: p.shopify.options ?? [],
         variants: (p.shopify.variants ?? []).map((v) => ({
-          sku: v.sku,
-          barcode: v.barcode ?? "",
-          option1: v.option1,
-          option2: v.option2,
+          sku: v.sku, barcode: v.barcode ?? "", option1: v.option1, option2: v.option2,
         })),
-      }));
-    try {
-      const res = await fetch("/api/shopify/fill-category", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ products: slimProducts, model }),
-      });
-      if (res.status === 401) throw new Error("Session expirée — veuillez vous reconnecter");
-      const data = await res.json() as {
-        applied: number;
-        failed: number;
-        totalTaxonomy: number;
-        error?: string;
       };
 
-      if (data.error) throw new Error(data.error);
+      try {
+        tickProgress(id, "active", "Champs catégorie + IA…");
+        const res = await fetch("/api/shopify/fill-category", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ products: [slim], model }),
+        });
+        if (res.status === 401) throw new Error("Session expirée");
+        const data = await res.json() as { applied?: number; failed?: number; totalTaxonomy?: number; error?: string };
+        if (data.error) throw new Error(data.error);
+        if ((data.failed ?? 0) > 0) throw new Error("Échec Shopify");
 
-      const parts: string[] = [];
-      if (data.applied > 0) parts.push(`${data.applied} produit${data.applied > 1 ? "s" : ""} mis à jour`);
-      if (data.totalTaxonomy > 0) parts.push(`${data.totalTaxonomy} champ${data.totalTaxonomy > 1 ? "s" : ""} catégorie rempli${data.totalTaxonomy > 1 ? "s" : ""} par l'IA`);
-      if (data.failed > 0) parts.push(`${data.failed} échoué${data.failed > 1 ? "s" : ""}`);
-      showToast(
-        parts.length > 0 ? parts.join(" · ") : "Aucun changement",
-        data.failed > 0 ? "error" : "success"
-      );
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : "Erreur", "error");
+        const taxLabel = (data.totalTaxonomy ?? 0) > 0 ? ` · ${data.totalTaxonomy} champs IA` : "";
+        tickProgress(id, "done", `Appliqué ✓${taxLabel}`);
+        applied++;
+      } catch (e) {
+        tickProgress(id, "error", e instanceof Error ? e.message : "Erreur");
+        failed++;
+      }
     }
+
+    showToast(
+      `${applied} produit${applied !== 1 ? "s" : ""} mis à jour${failed > 0 ? ` · ${failed} échoué${failed !== 1 ? "s" : ""}` : ""}`,
+      failed > 0 ? "error" : "success"
+    );
   };
 
   const handleBulkSync = async (ids: number[]) => {
-    const payloads: SyncPayload[] = ids.map((id) => {
-      const p = products.find((pr) => pr.shopify.id === id)!;
-      return {
+    initProgress(ids, "Synchronisation Shopify");
+    let success = 0;
+    let failed = 0;
+
+    for (const id of ids) {
+      const p = products.find((pr) => pr.shopify.id === id);
+      if (!p) { tickProgress(id, "error", "Produit introuvable"); failed++; continue; }
+
+      tickProgress(id, "active", "Sync en cours…");
+      const payload: SyncPayload = {
         productId: id,
         fields: {
           seoTitle: p.seoTitle,
@@ -260,22 +293,28 @@ export default function DashboardPage() {
           googleItemGroupId: p.googleItemGroupId,
         },
       };
-    });
 
-    try {
-      const res = await fetch("/api/shopify/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payloads }),
-      });
-      const data = await res.json() as { success?: number; failed?: number; errors?: string[] };
-      showToast(
-        `Synchronisé : ${data.success ?? 0} réussi${(data.success ?? 0) > 1 ? "s" : ""}${(data.failed ?? 0) > 0 ? `, ${data.failed} échoué${(data.failed ?? 0) > 1 ? "s" : ""}` : ""}`,
-        (data.failed ?? 0) > 0 ? "error" : "success"
-      );
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : "Erreur de synchronisation", "error");
+      try {
+        const res = await fetch("/api/shopify/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ payloads: [payload] }),
+        });
+        if (res.status === 401) throw new Error("Session expirée");
+        const data = await res.json() as { success?: number; failed?: number };
+        if ((data.failed ?? 0) > 0) throw new Error("Shopify a rejeté la mise à jour");
+        tickProgress(id, "done", "Synchronisé ✓");
+        success++;
+      } catch (e) {
+        tickProgress(id, "error", e instanceof Error ? e.message : "Erreur");
+        failed++;
+      }
     }
+
+    showToast(
+      `${success} synchronisé${success !== 1 ? "s" : ""}${failed > 0 ? ` · ${failed} échoué${failed !== 1 ? "s" : ""}` : ""}`,
+      failed > 0 ? "error" : "success"
+    );
   };
 
   const total = products.length;
@@ -372,6 +411,13 @@ export default function DashboardPage() {
         onBulkSync={handleBulkSync}
         onBulkGenerateAndSync={handleBulkGenerateAndSync}
         onApplyCategory={handleApplyCategory}
+      />
+
+      <ProgressPanel
+        visible={progress.visible}
+        operation={progress.operation}
+        items={progress.items}
+        onClose={() => setProgress((p) => ({ ...p, visible: false }))}
       />
 
       {toast && (
