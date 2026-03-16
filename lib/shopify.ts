@@ -97,7 +97,7 @@ export async function fetchProductMetafields(
   productId: number
 ): Promise<ShopifyMetafield[]> {
   const data = await shopifyFetch<{ metafields: ShopifyMetafield[] }>(
-    `/products/${productId}/metafields.json`
+    `/products/${productId}/metafields.json?limit=250`
   );
   return data.metafields;
 }

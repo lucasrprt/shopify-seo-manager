@@ -8,7 +8,7 @@ import { BulkActionBar } from "@/components/BulkActionBar";
 import { HealthBadge } from "@/components/HealthBadge";
 import { ProgressPanel, type ProgressItem } from "@/components/ProgressPanel";
 import { RefreshCw, ShoppingBag, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
-import { computeHealth } from "@/lib/validators";
+import { computeHealth, slugify } from "@/lib/validators";
 
 const DEFAULT_FILTERS: FilterState = {
   search: "",
@@ -30,6 +30,7 @@ export default function DashboardPage() {
   const [selected, setSelected] = useState<number[]>([]);
   const [model, setModel] = useState<AIModel>("openai");
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const [enrichedIds, setEnrichedIds] = useState<Set<number>>(new Set());
   const [progress, setProgress] = useState<{
     visible: boolean;
     operation: string;
@@ -70,6 +71,7 @@ export default function DashboardPage() {
     setError(null);
     setEnriching(false);
     setEnrichProgress(0);
+    setEnrichedIds(new Set());
     try {
       // Phase 1: load products instantly without metafields
       const res = await fetch("/api/shopify/products?meta=false");
@@ -91,6 +93,7 @@ export default function DashboardPage() {
         const r = await fetch(`/api/shopify/products?meta=true&offset=${offset}&limit=${batchSize}`);
         const d = await r.json() as { products?: EnrichedProduct[]; hasMore?: boolean; nextOffset?: number };
         if (d.products) {
+          const batchIds = d.products.map((p) => p.shopify.id);
           setProducts((prev) => {
             const updated = [...prev];
             d.products!.forEach((enriched) => {
@@ -98,6 +101,11 @@ export default function DashboardPage() {
               if (idx !== -1) updated[idx] = enriched;
             });
             return updated;
+          });
+          setEnrichedIds((prev) => {
+            const next = new Set(prev);
+            batchIds.forEach((id) => next.add(id));
+            return next;
           });
         }
         offset = d.nextOffset ?? (offset + batchSize);
@@ -133,11 +141,14 @@ export default function DashboardPage() {
           setProducts((prev) =>
             prev.map((p) => {
               if (p.shopify.id !== id) return p;
-              const updated = { ...p, ...data.generated };
+              const generated = { ...data.generated };
+              if (generated.urlHandle) generated.urlHandle = slugify(generated.urlHandle);
+              const updated = { ...p, ...generated };
               updated.health = computeHealth(updated);
               return updated;
             })
           );
+          setEnrichedIds((prev) => { const next = new Set(prev); next.add(id); return next; });
           success++;
         } else {
           failed++;
@@ -173,9 +184,12 @@ export default function DashboardPage() {
         const data = await res.json() as { generated?: Partial<GeneratedContent>; error?: string };
         if (!data.generated) throw new Error(data.error ?? "Erreur génération");
 
-        const updated = { ...product, ...data.generated };
+        const generated = { ...data.generated };
+        if (generated.urlHandle) generated.urlHandle = slugify(generated.urlHandle);
+        const updated = { ...product, ...generated };
         updated.health = computeHealth(updated);
         setProducts((prev) => prev.map((p) => p.shopify.id === id ? updated : p));
+        setEnrichedIds((prev) => { const next = new Set(prev); next.add(id); return next; });
 
         tickProgress(id, "active", "Sync Shopify…");
         const syncRes = await fetch("/api/shopify/sync", {
@@ -396,6 +410,8 @@ export default function DashboardPage() {
               filters={filters}
               selected={selected}
               onSelectChange={setSelected}
+              enriching={enriching}
+              enrichedIds={enrichedIds}
             />
           </>
         )}

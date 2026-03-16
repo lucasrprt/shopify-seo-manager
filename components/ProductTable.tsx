@@ -13,6 +13,10 @@ interface ProductTableProps {
   filters: FilterState;
   selected: number[];
   onSelectChange: (ids: number[]) => void;
+  /** True while phase-2 metafield enrichment is still in progress */
+  enriching?: boolean;
+  /** Set of product IDs that have been fully enriched with metafields */
+  enrichedIds?: Set<number>;
 }
 
 type SortKey = "title" | "score" | "seoScore" | "googleScore" | "vendor" | "updated";
@@ -33,7 +37,7 @@ function applyFilters(products: EnrichedProduct[], filters: FilterState): Enrich
   });
 }
 
-export function ProductTable({ products, filters, selected, onSelectChange }: ProductTableProps) {
+export function ProductTable({ products, filters, selected, onSelectChange, enriching, enrichedIds }: ProductTableProps) {
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "score", dir: "asc" });
 
   const filtered = applyFilters(products, filters);
@@ -187,7 +191,9 @@ export function ProductTable({ products, filters, selected, onSelectChange }: Pr
                   <HealthBadge score={product.health.googleScore} size="sm" />
                 </td>
                 <td className="px-4 py-3">
-                  {product.health.missingFields.length > 0 ? (
+                  {enriching && enrichedIds && !enrichedIds.has(product.shopify.id) ? (
+                    <span className="text-xs text-gray-400 italic">Calcul en cours…</span>
+                  ) : product.health.missingFields.length > 0 ? (
                     <div className="flex flex-wrap gap-1">
                       {product.health.missingFields.slice(0, 3).map((f) => (
                         <span
