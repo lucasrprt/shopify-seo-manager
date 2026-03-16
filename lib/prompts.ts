@@ -29,34 +29,47 @@ export function buildProductContext(product: EnrichedProduct): string {
   );
 }
 
-export const SYSTEM_PROMPT = `Tu es un expert en SEO e-commerce français et en optimisation Google Shopping.
-Tu génères du contenu de qualité professionnelle, persuasif et optimisé pour le référencement naturel français.
+export const SYSTEM_PROMPT = `Tu es un expert en SEO e-commerce français et en optimisation Google Shopping pour une boutique streetwear/art urbain (Walk By Streetart).
+Tu génères du contenu de qualité professionnelle, persuasif et optimisé pour maximiser le taux de clic (CTR) dans les résultats Google.
 
 Tes textes doivent :
-- Être rédigés en français correct et naturel
+- Être rédigés en français correct et naturel, avec un ton urbain/lifestyle moderne
 - Utiliser les mots-clés pertinents de manière fluide
-- Respecter les bonnes pratiques SEO (meta title ≤60 car., meta description ≤160 car.)
-- Être persuasifs et orientés conversion
-- Respecter le champ de longueur requis
+- Respecter strictement les longueurs : meta title ≤60 car., meta description ≤160 car.
+- Maximiser le CTR : inclure des éléments déclencheurs de clic (livraison, CTA, urgence douce, émojis ciblés)
+- La meta description DOIT mentionner "Livraison offerte dès 90€" et se terminer par un CTA actif
 
 Pour Google Shopping, tu dois inférer les champs à partir des données produit disponibles et fournir des valeurs précises selon les spécifications Google Merchant Center.`;
 
 export function buildFullGenerationPrompt(product: EnrichedProduct): string {
   const context = buildProductContext(product);
 
-  return `Génère tous les champs SEO et Google Merchant pour ce produit.
+  return `Génère tous les champs SEO et Google Merchant pour ce produit streetwear/art urbain.
 
 ## Données produit
 ${context}
 
-## Instructions
+## Instructions CTR pour le meta title
+- Structure : [Nom produit] [Attribut différenciant] | Walk By Streetart
+- Ex : "Baskets Grises Unisexe Urban Style | Walk By Streetart"
+- 20-60 caractères, mot-clé principal en tête
+
+## Instructions CTR pour la meta description
+- Doit inclure obligatoirement : "🚚 Livraison offerte dès 90€"
+- Inclure 1-2 attributs produit clés (couleur, matière, style)
+- Terminer par un CTA actif : "Commandez maintenant", "Découvrez", "Disponible en ligne"
+- Émojis autorisés : 🚚 ✅ ⭐ 🔥 (max 2 par description)
+- 120-160 caractères maximum
+- Ex : "🚚 Livraison offerte dès 90€ · Baskets streetwear unisexe en édition limitée. Style urbain et qualité premium. Commandez maintenant !"
+
+## Format de réponse
 Retourne UNIQUEMENT un objet JSON valide avec cette structure exacte (pas de texte avant/après) :
 
 {
-  "seoTitle": "Titre SEO optimisé (20-60 caractères, avec le nom du produit et mots-clés)",
-  "seoDescription": "Description meta SEO engageante (50-160 caractères, avec call-to-action)",
+  "seoTitle": "Titre SEO optimisé (20-60 caractères, [Produit] [Attribut] | Walk By Streetart)",
+  "seoDescription": "🚚 Livraison offerte dès 90€ · [attributs clés]. [CTA actif] (120-160 caractères)",
   "urlHandle": "url-produit-en-tirets-sans-accents",
-  "description": "<p>Description HTML complète du produit en français (200-500 mots). Utilise des balises <p>, <ul>, <li>, <strong>. Mets en avant les caractéristiques, avantages et usage. NE MENTIONNE PAS les tailles disponibles, le stock, la disponibilité ou les quantités.</p>",
+  "description": "<p>Description HTML complète du produit en français (200-500 mots). Utilise des balises <p>, <ul>, <li>, <strong>. Mets en avant les caractéristiques, avantages et usage. Ton urbain/lifestyle. NE MENTIONNE PAS les tailles disponibles, le stock, la disponibilité ou les quantités.</p>",
   "googleCategory": "Catégorie Google Merchant (ex: Vêtements et accessoires > Vêtements > Chemises)",
   "googleCondition": "new",
   "googleAgeGroup": "adult",
@@ -78,24 +91,29 @@ Règles importantes :
 - urlHandle DOIT être en minuscules avec des tirets, sans accents ni caractères spéciaux
 - Si une information n'est pas disponible, utilise une chaîne vide ""
 - N'invente pas de GTIN, laisse vide si non disponible
-- Dans la description, NE MENTIONNE JAMAIS les tailles en stock, la disponibilité, les quantités ou les pointures disponibles : ces informations changent constamment`;
+- Dans la description, NE MENTIONNE JAMAIS les tailles en stock, la disponibilité, les quantités ou les pointures disponibles`;
 }
 
 export function buildSeoOnlyPrompt(product: EnrichedProduct): string {
   const context = buildProductContext(product);
 
-  return `Génère uniquement les champs SEO pour ce produit.
+  return `Génère uniquement les champs SEO pour ce produit streetwear/art urbain (Walk By Streetart).
 
 ## Données produit
 ${context}
 
+## Instructions CTR
+- Meta title : [Produit] [Attribut différenciant] | Walk By Streetart (20-60 car.)
+- Meta description : commencer par "🚚 Livraison offerte dès 90€ ·", inclure 1-2 attributs clés, terminer par un CTA actif (120-160 car.)
+- Description : ton urbain/lifestyle, 200-500 mots, sans mention de stock ni disponibilité
+
 Retourne UNIQUEMENT un objet JSON valide :
 
 {
-  "seoTitle": "Titre SEO optimisé (20-60 caractères)",
-  "seoDescription": "Description meta (50-160 caractères)",
-  "urlHandle": "url-en-tirets",
-  "description": "<p>Description HTML complète en français (sans mention de stock, tailles disponibles ou disponibilité)...</p>"
+  "seoTitle": "Titre SEO (20-60 car.) — ex: Veste Bomber Noir Oversize | Walk By Streetart",
+  "seoDescription": "🚚 Livraison offerte dès 90€ · [attributs]. [CTA] (120-160 car.)",
+  "urlHandle": "url-en-tirets-sans-accents",
+  "description": "<p>Description HTML complète en français, ton urbain/lifestyle (sans mention de stock, tailles disponibles ou disponibilité)...</p>"
 }`;
 }
 
