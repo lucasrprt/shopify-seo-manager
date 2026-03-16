@@ -176,10 +176,18 @@ export async function syncProductToShopify(payload: SyncPayload): Promise<void> 
   if (fields.seoDescription !== undefined && fields.seoDescription !== "") {
     metafields.push({ namespace: "global", key: "description_tag", value: fields.seoDescription, type: "single_line_text_field" });
   }
+  // Fallbacks for fields Google requires — prevents "Demoted: Missing X" errors
+  const REQUIRED_DEFAULTS: Partial<SyncPayload["fields"]> = {
+    googleCondition: "new",
+    googleAgeGroup: "adult",
+  };
+
   for (const [fieldKey, metafieldKey] of Object.entries(GOOGLE_METAFIELD_KEY_MAP)) {
-    const value = fields[fieldKey as keyof typeof fields];
-    if (value !== undefined && value !== "") {
-      metafields.push({ namespace: "google", key: metafieldKey, value: value as string, type: "single_line_text_field" });
+    const value =
+      (fields[fieldKey as keyof typeof fields] as string | undefined) ||
+      (REQUIRED_DEFAULTS[fieldKey as keyof typeof REQUIRED_DEFAULTS] as string | undefined);
+    if (value) {
+      metafields.push({ namespace: "google", key: metafieldKey, value, type: "single_line_text_field" });
     }
   }
 
