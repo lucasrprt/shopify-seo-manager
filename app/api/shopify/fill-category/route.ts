@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   fetchProductCurrentMetafields,
+  fetchProductOptionsWithLinks,
+  fetchCategoryMetafieldDefinitions,
+  linkOptionToMetafield,
   syncProductToShopify,
   syncRawMetafields,
   renameProductOptions,
@@ -150,17 +153,39 @@ export async function POST(req: NextRequest) {
         const category = detectCategory(product.title, product.productType, product.tags);
         const schema = getSchemaForCategory(category);
 
-        // ── Step 2b: For shoes, ensure the size option is named "Pointure" ────
+        // ── Step 2b: For shoes — rename + link the size option ───────────────
         if (category === "shoes") {
+          // 1. Rename "Taille" / "Size" → "Pointure" if needed
           const sizeOpt = product.options.find(
             (o) => /size|taille/i.test(o.name) && !/pointure/i.test(o.name)
           );
           if (sizeOpt) {
-            // Send ALL options (rename only the size one) — Shopify requires full array
             await renameProductOptions(
               product.id,
               product.options.map((o) => ({ id: o.id, name: o.id === sizeOpt.id ? "Pointure" : o.name }))
             );
+          }
+
+          // 2. Link the "Pointure" option to its taxonomy metafield if not already linked
+          //    Without this link, Shopify won't attach it to "Champs méta Catégorie"
+          try {
+            const optionsWithLinks = await fetchProductOptionsWithLinks(product.id);
+            const pointureOpt = optionsWithLinks.find((o) => /pointure/i.test(o.name));
+
+            if (pointureOpt && !pointureOpt.linkedMetafield) {
+              // Ask Shopify which metafield definition corresponds to size in this category
+              const categoryDefs = await fetchCategoryMetafieldDefinitions(product.id);
+              const sizeDef = categoryDefs.find(
+                (d) => /size|taille|pointure|shoe.?size/i.test(d.name) || /size|taille/.test(d.key)
+              );
+
+              // Link to category def if found, else try the most common Shopify taxonomy key
+              const ns = sizeDef?.namespace ?? "shopify";
+              const k = sizeDef?.key ?? "shoe-size";
+              await linkOptionToMetafield(product.id, pointureOpt.id, ns, k);
+            }
+          } catch {
+            // Non-blocking — continue even if linking fails
           }
         }
 

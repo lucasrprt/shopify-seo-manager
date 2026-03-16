@@ -279,6 +279,74 @@ export async function fetchProductCurrentMetafields(
   return data.product.metafields.nodes;
 }
 
+/** Returns each option with its currently-linked metafield (namespace + key), if any. */
+export async function fetchProductOptionsWithLinks(
+  productId: number
+): Promise<Array<{ id: string; name: string; linkedMetafield: { namespace: string; key: string } | null }>> {
+  const data = await shopifyGraphQL<{
+    product: {
+      options: Array<{
+        id: string;
+        name: string;
+        linkedMetafield: { namespace: string; key: string } | null;
+      }>;
+    };
+  }>(`query($id: ID!) {
+    product(id: $id) {
+      options { id name linkedMetafield { namespace key } }
+    }
+  }`, { id: `gid://shopify/Product/${productId}` });
+  return data.product.options;
+}
+
+/** Returns the metafield definitions attached to the product's Shopify taxonomy category. */
+export async function fetchCategoryMetafieldDefinitions(
+  productId: number
+): Promise<Array<{ namespace: string; key: string; name: string }>> {
+  try {
+    const data = await shopifyGraphQL<{
+      product: {
+        category: {
+          metafieldDefinitions: { nodes: Array<{ namespace: string; key: string; name: string }> };
+        } | null;
+      };
+    }>(`query($id: ID!) {
+      product(id: $id) {
+        category { metafieldDefinitions(first: 50) { nodes { namespace key name } } }
+      }
+    }`, { id: `gid://shopify/Product/${productId}` });
+    return data.product.category?.metafieldDefinitions.nodes ?? [];
+  } catch {
+    return []; // field may not exist in all API versions
+  }
+}
+
+/** Links a product option (by GID) to a metafield definition so Shopify auto-populates it. */
+export async function linkOptionToMetafield(
+  productId: number,
+  optionGid: string,
+  namespace: string,
+  key: string
+): Promise<boolean> {
+  try {
+    const data = await shopifyGraphQL<{
+      productOptionUpdate: { userErrors: Array<{ message: string }> };
+    }>(`mutation($productId: ID!, $option: OptionUpdateInput!, $variantStrategy: ProductOptionUpdateVariantStrategy!) {
+      productOptionUpdate(productId: $productId, option: $option, variantStrategy: $variantStrategy) {
+        product { id }
+        userErrors { field message }
+      }
+    }`, {
+      productId: `gid://shopify/Product/${productId}`,
+      option: { id: optionGid, linkedMetafield: { namespace, key } },
+      variantStrategy: "LEAVE_AS_IS",
+    });
+    return data.productOptionUpdate.userErrors.length === 0;
+  } catch {
+    return false;
+  }
+}
+
 /** Writes arbitrary metafields to a product (upsert by namespace+key). */
 export async function syncRawMetafields(
   productId: number,
