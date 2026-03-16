@@ -411,6 +411,8 @@ export default function DashboardPage() {
         onBulkSync={handleBulkSync}
         onBulkGenerateAndSync={handleBulkGenerateAndSync}
         onApplyCategory={handleApplyCategory}
+        progressDone={progress.visible ? progress.items.filter((i) => i.status === "done" || i.status === "error").length : undefined}
+        progressTotal={progress.visible ? progress.items.length : undefined}
       />
 
       <ProgressPanel

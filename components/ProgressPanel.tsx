@@ -46,17 +46,27 @@ export function ProgressPanel({ visible, operation, items, onClose }: ProgressPa
     <div className="fixed right-4 bottom-20 z-[60] w-72 bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
       {/* Header */}
       <div className="flex items-start justify-between px-4 py-3 border-b border-gray-700 shrink-0">
-        <div>
-          <p className="text-white text-sm font-semibold leading-tight">{operation}</p>
-          <p className="text-gray-400 text-xs mt-0.5">
-            {allDone
-              ? `${done - errors} succès · ${errors} échec${errors !== 1 ? "s" : ""}`
-              : `${done} / ${total} traité${done !== 1 ? "s" : ""}`}
-          </p>
+        <div className="flex-1 min-w-0">
+          <p className="text-white text-sm font-semibold leading-tight truncate">{operation}</p>
+
+          {/* Prominent counter */}
+          <div className="flex items-baseline gap-1.5 mt-1">
+            {allDone ? (
+              <span className={cn("text-xs font-medium", errors === 0 ? "text-green-400" : "text-yellow-400")}>
+                {errors === 0 ? "✓ Tout traité" : `${done - errors} succès · ${errors} erreur${errors !== 1 ? "s" : ""}`}
+              </span>
+            ) : (
+              <>
+                <span className="text-white text-xl font-bold tabular-nums leading-none">{done}</span>
+                <span className="text-gray-400 text-sm font-medium leading-none">/ {total}</span>
+                <span className="text-gray-500 text-xs ml-1">produit{total !== 1 ? "s" : ""}</span>
+              </>
+            )}
+          </div>
         </div>
         <button
           onClick={onClose}
-          className="text-gray-500 hover:text-white transition-colors mt-0.5 ml-2 shrink-0"
+          className="text-gray-500 hover:text-white transition-colors mt-0.5 ml-3 shrink-0"
         >
           <X className="w-4 h-4" />
         </button>

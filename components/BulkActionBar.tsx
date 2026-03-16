@@ -15,6 +15,9 @@ interface BulkActionBarProps {
   onBulkSync: (ids: number[]) => Promise<void>;
   onBulkGenerateAndSync: (ids: number[], mode: "full" | "seo" | "google") => Promise<void>;
   onApplyCategory: (ids: number[]) => Promise<void>;
+  /** Live progress counter — shown inside the active button (e.g. "3 / 50"). */
+  progressDone?: number;
+  progressTotal?: number;
 }
 
 export function BulkActionBar({
@@ -27,6 +30,8 @@ export function BulkActionBar({
   onBulkSync,
   onBulkGenerateAndSync,
   onApplyCategory,
+  progressDone,
+  progressTotal,
 }: BulkActionBarProps) {
   const [generating, setGenerating] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -136,7 +141,10 @@ export function BulkActionBar({
         title="Appliquer les champs méta Catégorie depuis les données produit (marque, couleur, taille, genre...)"
       >
         {applyingCategory ? (
-          <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Catégorie...</>
+          <>
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            {progressTotal ? `${progressDone ?? 0} / ${progressTotal}` : "Catégorie..."}
+          </>
         ) : (
           <><Tag className="w-3.5 h-3.5" /> Champs catégorie</>
         )}
@@ -149,7 +157,10 @@ export function BulkActionBar({
         className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors font-medium"
       >
         {generating ? (
-          <><Loader2 className="w-4 h-4 animate-spin" /> Génération...</>
+          <>
+            <Loader2 className="w-4 h-4 animate-spin" />
+            {progressTotal ? `${progressDone ?? 0} / ${progressTotal}` : "Génération..."}
+          </>
         ) : syncing ? (
           <><Loader2 className="w-4 h-4 animate-spin" /> Sync Shopify...</>
         ) : (
@@ -175,8 +186,11 @@ export function BulkActionBar({
         className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
         title="Synchroniser sans générer"
       >
-        <Upload className="w-3.5 h-3.5" />
-        Sync
+        {syncing && progressTotal ? (
+          <><Loader2 className="w-3.5 h-3.5 animate-spin" />{progressDone ?? 0} / {progressTotal}</>
+        ) : (
+          <><Upload className="w-3.5 h-3.5" />Sync</>
+        )}
       </button>
 
       <button
