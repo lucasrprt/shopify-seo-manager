@@ -23,6 +23,9 @@ export function buildProductContext(product: EnrichedProduct): string {
       options,
       variantes: variants,
       handle_actuel: p.handle,
+      seo_title_existant: product.seoTitle || null,
+      seo_description_existante: product.seoDescription || null,
+      url_handle_existant: product.urlHandle || null,
     },
     null,
     2
@@ -50,17 +53,16 @@ export function buildFullGenerationPrompt(product: EnrichedProduct): string {
 ${context}
 
 ## Instructions CTR pour le meta title
-- Structure : [Nom produit] [Attribut différenciant] | Walk By Streetart
+- Si "seo_title_existant" est non-null et déjà bon (contient le nom produit, ≤60 car.), améliore-le subtilement plutôt que de le remplacer complètement
+- Sinon, structure : [Nom produit] [Attribut différenciant] | Walk By Streetart
 - Ex : "Baskets Grises Unisexe Urban Style | Walk By Streetart"
 - 20-60 caractères, mot-clé principal en tête
 
 ## Instructions CTR pour la meta description
-- Doit inclure obligatoirement : "🚚 Livraison offerte dès 90€"
-- Inclure 1-2 attributs produit clés (couleur, matière, style)
-- Terminer par un CTA actif : "Commandez maintenant", "Découvrez", "Disponible en ligne"
+- Si "seo_description_existante" est non-null et contient déjà "Livraison offerte dès 90€" et un CTA, améliore-la plutôt que de la remplacer
+- Sinon, construire depuis zéro avec : "🚚 Livraison offerte dès 90€ ·" en début, 1-2 attributs clés, CTA actif en fin
 - Émojis autorisés : 🚚 ✅ ⭐ 🔥 (max 2 par description)
 - 120-160 caractères maximum
-- Ex : "🚚 Livraison offerte dès 90€ · Baskets streetwear unisexe en édition limitée. Style urbain et qualité premium. Commandez maintenant !"
 
 ## Format de réponse
 Retourne UNIQUEMENT un objet JSON valide avec cette structure exacte (pas de texte avant/après) :
@@ -103,9 +105,9 @@ export function buildSeoOnlyPrompt(product: EnrichedProduct): string {
 ${context}
 
 ## Instructions CTR
-- Meta title : [Produit] [Attribut différenciant] | Walk By Streetart (20-60 car.)
-- Meta description : commencer par "🚚 Livraison offerte dès 90€ ·", inclure 1-2 attributs clés, terminer par un CTA actif (120-160 car.)
-- Description : ton urbain/lifestyle, 200-500 mots, sans mention de stock ni disponibilité
+- Meta title : si "seo_title_existant" est déjà bon (≤60 car., contient le produit), améliore-le ; sinon crée [Produit] [Attribut] | Walk By Streetart (20-60 car.)
+- Meta description : si "seo_description_existante" contient déjà "Livraison offerte dès 90€" et un CTA, améliore-la ; sinon crée depuis zéro avec "🚚 Livraison offerte dès 90€ ·" + attributs + CTA (120-160 car.)
+- Description : si "description_existante" est déjà complète (>200 mots), améliore-la ; sinon crée depuis zéro. Ton urbain/lifestyle, sans mention de stock ni disponibilité
 
 Retourne UNIQUEMENT un objet JSON valide :
 
