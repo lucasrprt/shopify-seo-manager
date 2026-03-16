@@ -1,5 +1,12 @@
 import type { EnrichedProduct } from "@/types";
 
+const KID_TAGS = ["kid", "kids", "enfant", "enfants", "children", "child", "youth", "bébé", "bebe", "baby", "junior", "garçon", "fille", "boy", "girl"];
+
+export function detectAgeGroup(tags: string): "kids" | "adult" {
+  const normalized = tags.toLowerCase().split(",").map((t) => t.trim());
+  return normalized.some((t) => KID_TAGS.includes(t)) ? "kids" : "adult";
+}
+
 export function buildProductContext(product: EnrichedProduct): string {
   const p = product.shopify;
   const variants = p.variants.slice(0, 10).map((v) => ({
@@ -26,6 +33,7 @@ export function buildProductContext(product: EnrichedProduct): string {
       seo_title_existant: product.seoTitle || null,
       seo_description_existante: product.seoDescription || null,
       url_handle_existant: product.urlHandle || null,
+      age_group_detecte: detectAgeGroup(p.tags ?? ""),
     },
     null,
     2
