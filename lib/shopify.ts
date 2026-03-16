@@ -204,6 +204,17 @@ export async function syncProductToShopify(payload: SyncPayload): Promise<void> 
   });
 }
 
+/** Rename variant options on a product. Pass ALL options (unchanged ones too) to avoid data loss. */
+export async function renameProductOptions(
+  productId: number,
+  options: Array<{ id: number; name: string }>
+): Promise<void> {
+  await shopifyFetch(`/products/${productId}.json`, {
+    method: "PUT",
+    body: JSON.stringify({ product: { id: productId, options } }),
+  });
+}
+
 // ─── GraphQL (metafield definitions + current values) ─────────────────────────
 
 export interface MetafieldDefinition {

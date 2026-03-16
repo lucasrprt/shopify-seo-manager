@@ -3,6 +3,7 @@ import {
   fetchProductCurrentMetafields,
   syncProductToShopify,
   syncRawMetafields,
+  renameProductOptions,
 } from "@/lib/shopify";
 import { generateCategoryFieldValues } from "@/lib/ai";
 import { detectAgeGroup } from "@/lib/prompts";
@@ -88,7 +89,7 @@ interface SlimProduct {
   vendor: string;
   productType: string;
   tags: string;
-  options: Array<{ name: string; values: string[] }>;
+  options: Array<{ id: number; name: string; values: string[] }>;
   variants: Array<{ sku: string; barcode: string; option1: string | null; option2: string | null }>;
 }
 
@@ -148,6 +149,20 @@ export async function POST(req: NextRequest) {
         // ── Step 2: Detect category and build AI field list ───────────────────
         const category = detectCategory(product.title, product.productType, product.tags);
         const schema = getSchemaForCategory(category);
+
+        // ── Step 2b: For shoes, ensure the size option is named "Pointure" ────
+        if (category === "shoes") {
+          const sizeOpt = product.options.find(
+            (o) => /size|taille/i.test(o.name) && !/pointure/i.test(o.name)
+          );
+          if (sizeOpt) {
+            // Send ALL options (rename only the size one) — Shopify requires full array
+            await renameProductOptions(
+              product.id,
+              product.options.map((o) => ({ id: o.id, name: o.id === sizeOpt.id ? "Pointure" : o.name }))
+            );
+          }
+        }
 
         // Fetch current metafields to skip already-filled ones
         const existing = await fetchProductCurrentMetafields(product.id);
