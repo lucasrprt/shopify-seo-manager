@@ -342,12 +342,21 @@ export default function DashboardPage() {
       const p = products.find((pr) => pr.shopify.id === id);
       if (!p) { tickProgress(id, "error", "Produit introuvable"); failed++; continue; }
 
+      const gtinPattern = /^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/;
+
+      // Try variant barcodes first (strip non-digits)
       const validBarcodes = p.shopify.variants
-        ?.map((v) => v.barcode?.replace(/\D/g, "") ?? "")
-        .filter((b) => /^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/.test(b)) ?? [];
+        ?.map((v) => (v.barcode ?? "").replace(/\D/g, ""))
+        .filter((b) => gtinPattern.test(b)) ?? [];
+
+      // Fallback: clean the existing googleGtin value (e.g. "3614 274103180" → "3614274103180")
+      if (validBarcodes.length === 0 && p.googleGtin) {
+        const cleaned = p.googleGtin.replace(/\D/g, "");
+        if (gtinPattern.test(cleaned)) validBarcodes.push(cleaned);
+      }
 
       if (validBarcodes.length === 0) {
-        tickProgress(id, "done", "Aucun barcode valide trouvé");
+        tickProgress(id, "done", `Aucun barcode valide (actuel: "${p.googleGtin || "vide"}")`);
         skipped++;
         continue;
       }

@@ -44,7 +44,9 @@ export function validateDescription(value: string): FieldValidation {
 export function validateGtin(value: string): FieldValidation {
   const label = "GTIN";
   if (!value) return { field: "googleGtin", label, valid: false, warning: "Recommandé pour Google Shopping" };
-  if (!/^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/.test(value)) {
+  // Strip spaces, dashes and other non-digit characters before validating
+  const digits = value.replace(/\D/g, "");
+  if (!/^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/.test(digits)) {
     return { field: "googleGtin", label, valid: false, error: "Doit contenir 8, 12, 13 ou 14 chiffres" };
   }
   return { field: "googleGtin", label, valid: true };

@@ -229,15 +229,16 @@ export function enrichProduct(
     googleGender: getMeta("google", "gender") as EnrichedProduct["googleGender"],
     googleGtin: (() => {
       const gtinPattern = /^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/;
-      const metafieldGtin = getMeta("google", "gtin");
-      // If metafield has a valid GTIN, use it
-      if (metafieldGtin && gtinPattern.test(metafieldGtin)) return metafieldGtin;
-      // Otherwise try to find a valid GTIN from variant barcodes (strips spaces/dashes)
+      // Clean the metafield first (strip spaces, dashes, etc.) before validating
+      const rawMetafield = getMeta("google", "gtin");
+      const cleanedMetafield = rawMetafield.replace(/\D/g, "");
+      if (cleanedMetafield && gtinPattern.test(cleanedMetafield)) return cleanedMetafield;
+      // Fall back to variant barcodes
       const variantGtin = product.variants
         ?.map((v) => (v.barcode ?? "").replace(/\D/g, ""))
         .find((b) => gtinPattern.test(b)) ?? "";
-      // Return variant GTIN if found, else fall back to raw metafield value (shows error)
-      return variantGtin || metafieldGtin;
+      // If still nothing valid, return the raw metafield value so the error is visible
+      return variantGtin || rawMetafield;
     })(),
     googleMpn: getMeta("google", "mpn"),
     googleBrand: getMeta("google", "brand") || product.vendor,
