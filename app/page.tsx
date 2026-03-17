@@ -441,7 +441,8 @@ export default function DashboardPage() {
   };
 
   const handleSearchGtin = async (ids: number[]) => {
-    initProgress(ids, "Recherche GTIN automatique");
+    const estimatedMin = Math.ceil((ids.length * 6) / 60);
+    initProgress(ids, `Recherche GTIN automatique (~${estimatedMin} min)`);
     let success = 0;
     let notFound = 0;
     let failed = 0;
@@ -455,42 +456,18 @@ export default function DashboardPage() {
       tickProgress(id, "active", `Recherche "${query}"…`);
 
       try {
-        const res = await fetch(`/api/gtin-lookup?q=${encodeURIComponent(query)}`);
-        if (res.status === 429) {
-          // Rate limited — wait 3s and retry once before giving up on this product
-          await new Promise((r) => setTimeout(r, 3000));
-          const retry = await fetch(`/api/gtin-lookup?q=${encodeURIComponent(query)}`);
-          if (retry.status === 429) {
-            tickProgress(id, "done", "Limite API atteinte — réessaie dans quelques minutes");
-            notFound++;
-            continue;
+        // Helper: fetch with automatic retry on 429
+        const fetchWithBackoff = async (url: string, retries = 3, baseDelay = 10000): Promise<Response> => {
+          const res = await fetch(url);
+          if (res.status === 429 && retries > 0) {
+            tickProgress(id, "active", `Limite API — attente ${baseDelay / 1000}s…`);
+            await new Promise((r) => setTimeout(r, baseDelay));
+            return fetchWithBackoff(url, retries - 1, baseDelay * 1.5);
           }
-          const retryData = await retry.json() as { items?: { ean: string; title: string; brand: string }[]; error?: string };
-          if (!retryData.error && (retryData.items ?? []).length > 0) {
-            const best = retryData.items![0];
-            tickProgress(id, "active", `GTIN trouvé: ${best.ean} → sync Shopify…`);
-            const syncRes = await fetch("/api/shopify/sync", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ payloads: [{ productId: id, fields: { googleGtin: best.ean } }] }),
-            });
-            const syncData = await syncRes.json() as { success?: number; failed?: number };
-            if ((syncData.failed ?? 0) === 0) {
-              setProducts((prev) => prev.map((pr) => {
-                if (pr.shopify.id !== id) return pr;
-                const updated = { ...pr, googleGtin: best.ean };
-                updated.health = computeHealth(updated);
-                return updated;
-              }));
-              tickProgress(id, "done", `GTIN → ${best.ean} ✓  (${best.title})`);
-              success++;
-            }
-          } else {
-            tickProgress(id, "done", "Aucun GTIN trouvé dans la base");
-            notFound++;
-          }
-          continue;
-        }
+          return res;
+        };
+
+        const res = await fetchWithBackoff(`/api/gtin-lookup?q=${encodeURIComponent(query)}`);
         const data = await res.json() as { items?: { ean: string; title: string; brand: string }[]; error?: string };
         if (data.error) throw new Error(data.error);
 
@@ -527,8 +504,8 @@ export default function DashboardPage() {
         tickProgress(id, "done", `GTIN → ${best.ean} ✓  (${best.title})`);
         success++;
 
-        // Delay between requests to stay under UPCItemDB rate limits
-        await new Promise((r) => setTimeout(r, 1500));
+        // 6s between requests = ~10 req/min (UPCItemDB trial limit)
+        await new Promise((r) => setTimeout(r, 6000));
       } catch (e) {
         tickProgress(id, "error", e instanceof Error ? e.message : "Erreur");
         failed++;
