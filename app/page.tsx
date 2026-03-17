@@ -457,9 +457,39 @@ export default function DashboardPage() {
       try {
         const res = await fetch(`/api/gtin-lookup?q=${encodeURIComponent(query)}`);
         if (res.status === 429) {
-          tickProgress(id, "error", "Limite UPCItemDB atteinte (100 req/jour)");
-          failed++;
-          break; // No point continuing if rate limited
+          // Rate limited — wait 3s and retry once before giving up on this product
+          await new Promise((r) => setTimeout(r, 3000));
+          const retry = await fetch(`/api/gtin-lookup?q=${encodeURIComponent(query)}`);
+          if (retry.status === 429) {
+            tickProgress(id, "done", "Limite API atteinte — réessaie dans quelques minutes");
+            notFound++;
+            continue;
+          }
+          const retryData = await retry.json() as { items?: { ean: string; title: string; brand: string }[]; error?: string };
+          if (!retryData.error && (retryData.items ?? []).length > 0) {
+            const best = retryData.items![0];
+            tickProgress(id, "active", `GTIN trouvé: ${best.ean} → sync Shopify…`);
+            const syncRes = await fetch("/api/shopify/sync", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ payloads: [{ productId: id, fields: { googleGtin: best.ean } }] }),
+            });
+            const syncData = await syncRes.json() as { success?: number; failed?: number };
+            if ((syncData.failed ?? 0) === 0) {
+              setProducts((prev) => prev.map((pr) => {
+                if (pr.shopify.id !== id) return pr;
+                const updated = { ...pr, googleGtin: best.ean };
+                updated.health = computeHealth(updated);
+                return updated;
+              }));
+              tickProgress(id, "done", `GTIN → ${best.ean} ✓  (${best.title})`);
+              success++;
+            }
+          } else {
+            tickProgress(id, "done", "Aucun GTIN trouvé dans la base");
+            notFound++;
+          }
+          continue;
         }
         const data = await res.json() as { items?: { ean: string; title: string; brand: string }[]; error?: string };
         if (data.error) throw new Error(data.error);
@@ -497,8 +527,8 @@ export default function DashboardPage() {
         tickProgress(id, "done", `GTIN → ${best.ean} ✓  (${best.title})`);
         success++;
 
-        // Small delay to avoid hitting UPCItemDB rate limit (100 req/day)
-        await new Promise((r) => setTimeout(r, 300));
+        // Delay between requests to stay under UPCItemDB rate limits
+        await new Promise((r) => setTimeout(r, 1500));
       } catch (e) {
         tickProgress(id, "error", e instanceof Error ? e.message : "Erreur");
         failed++;
