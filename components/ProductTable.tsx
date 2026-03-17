@@ -33,6 +33,7 @@ function applyFilters(products: EnrichedProduct[], filters: FilterState): Enrich
     if (filters.missingType === "seo" && p.health.seoScore >= 100) return false;
     if (filters.missingType === "google" && p.health.googleScore >= 100) return false;
     if (filters.missingType === "both" && (p.health.seoScore >= 100 || p.health.googleScore >= 100)) return false;
+    if (filters.missingField && !p.health.missingFields.includes(filters.missingField)) return false;
     return true;
   });
 }

@@ -15,6 +15,7 @@ const DEFAULT_FILTERS: FilterState = {
   healthMin: 0,
   healthMax: 100,
   missingType: "all",
+  missingField: "",
   vendor: "",
   productType: "",
   status: "all",

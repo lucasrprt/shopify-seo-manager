@@ -108,6 +108,7 @@ export interface FilterState {
   healthMin: number;
   healthMax: number;
   missingType: "all" | "seo" | "google" | "both";
+  missingField: string; // specific error label, e.g. "Meta Title SEO"
   vendor: string;
   productType: string;
   status: "all" | "active" | "draft" | "archived";

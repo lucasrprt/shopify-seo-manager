@@ -14,6 +14,17 @@ export function ProductFilters({ filters, onChange, products }: ProductFiltersPr
   const vendors = [...new Set(products.map((p) => p.shopify.vendor).filter(Boolean))].sort();
   const types = [...new Set(products.map((p) => p.shopify.product_type).filter(Boolean))].sort();
 
+  // Build dynamic error list from actual product issues, sorted by count desc
+  const errorCounts = new Map<string, number>();
+  for (const p of products) {
+    for (const f of p.health.missingFields) {
+      errorCounts.set(f, (errorCounts.get(f) ?? 0) + 1);
+    }
+  }
+  const errorOptions = [...errorCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, count]) => ({ label, count }));
+
   const statusCounts = {
     all: products.length,
     active: products.filter((p) => p.shopify.status === "active").length,
@@ -27,6 +38,7 @@ export function ProductFilters({ filters, onChange, products }: ProductFiltersPr
   const hasActiveFilters =
     filters.search ||
     filters.missingType !== "all" ||
+    filters.missingField ||
     filters.vendor ||
     filters.productType ||
     filters.status !== "all" ||
@@ -77,6 +89,34 @@ export function ProductFilters({ filters, onChange, products }: ProductFiltersPr
             ))}
           </div>
         </div>
+
+        {/* Specific error filter */}
+        {errorOptions.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Erreur spécifique</label>
+            <div className="flex flex-wrap gap-1">
+              {filters.missingField && (
+                <button
+                  onClick={() => set("missingField", "")}
+                  className="px-3 py-1 text-xs rounded-full border bg-blue-600 text-white border-blue-600 flex items-center gap-1"
+                >
+                  {filters.missingField}
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+              {!filters.missingField && errorOptions.map(({ label, count }) => (
+                <button
+                  key={label}
+                  onClick={() => set("missingField", label)}
+                  className="px-3 py-1 text-xs rounded-full border bg-white text-gray-600 border-gray-300 hover:border-red-400 hover:text-red-600 transition-colors flex items-center gap-1"
+                >
+                  {label}
+                  <span className="bg-red-100 text-red-600 text-[10px] font-semibold px-1.5 rounded-full">{count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Status */}
         <div className="flex flex-col gap-1">
@@ -182,6 +222,7 @@ export function ProductFilters({ filters, onChange, products }: ProductFiltersPr
                 healthMin: 0,
                 healthMax: 100,
                 missingType: "all",
+                missingField: "",
                 vendor: "",
                 productType: "",
                 status: "all",
