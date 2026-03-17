@@ -440,6 +440,81 @@ export default function DashboardPage() {
     showToast(parts || "Aucune modification", failed > 0 ? "error" : "success");
   };
 
+  const handleSearchGtin = async (ids: number[]) => {
+    initProgress(ids, "Recherche GTIN automatique");
+    let success = 0;
+    let notFound = 0;
+    let failed = 0;
+
+    for (const id of ids) {
+      const p = products.find((pr) => pr.shopify.id === id);
+      if (!p) { tickProgress(id, "error", "Produit introuvable"); failed++; continue; }
+
+      // Build search query: brand + product title
+      const query = [p.shopify.vendor, p.shopify.title].filter(Boolean).join(" ");
+      tickProgress(id, "active", `Recherche "${query}"…`);
+
+      try {
+        const res = await fetch(`/api/gtin-lookup?q=${encodeURIComponent(query)}`);
+        if (res.status === 429) {
+          tickProgress(id, "error", "Limite UPCItemDB atteinte (100 req/jour)");
+          failed++;
+          break; // No point continuing if rate limited
+        }
+        const data = await res.json() as { items?: { ean: string; title: string; brand: string }[]; error?: string };
+        if (data.error) throw new Error(data.error);
+
+        const items = data.items ?? [];
+        if (items.length === 0) {
+          tickProgress(id, "done", "Aucun GTIN trouvé dans la base");
+          notFound++;
+          continue;
+        }
+
+        // Take best match (first result)
+        const best = items[0];
+        tickProgress(id, "active", `GTIN trouvé: ${best.ean} → sync Shopify…`);
+
+        const syncRes = await fetch("/api/shopify/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            payloads: [{ productId: id, fields: { googleGtin: best.ean } }],
+          }),
+        });
+        if (syncRes.status === 401) throw new Error("Session expirée");
+        const syncData = await syncRes.json() as { success?: number; failed?: number };
+        if ((syncData.failed ?? 0) > 0) throw new Error("Shopify a rejeté la mise à jour");
+
+        setProducts((prev) =>
+          prev.map((pr) => {
+            if (pr.shopify.id !== id) return pr;
+            const updated = { ...pr, googleGtin: best.ean };
+            updated.health = computeHealth(updated);
+            return updated;
+          })
+        );
+        tickProgress(id, "done", `GTIN → ${best.ean} ✓  (${best.title})`);
+        success++;
+
+        // Small delay to avoid hitting UPCItemDB rate limit (100 req/day)
+        await new Promise((r) => setTimeout(r, 300));
+      } catch (e) {
+        tickProgress(id, "error", e instanceof Error ? e.message : "Erreur");
+        failed++;
+      }
+    }
+
+    showToast(
+      [
+        success > 0 ? `${success} GTIN trouvé${success !== 1 ? "s" : ""}` : "",
+        notFound > 0 ? `${notFound} non trouvé${notFound !== 1 ? "s" : ""}` : "",
+        failed > 0 ? `${failed} erreur${failed !== 1 ? "s" : ""}` : "",
+      ].filter(Boolean).join(" · ") || "Aucun résultat",
+      failed > 0 ? "error" : "success"
+    );
+  };
+
   const handleFixItemGroupId = async (ids: number[]) => {
     initProgress(ids, "Correction IDs GMC");
     let success = 0;
@@ -586,6 +661,7 @@ export default function DashboardPage() {
         onApplyCategory={handleApplyCategory}
         onFixItemGroupId={handleFixItemGroupId}
         onFixGtin={handleFixGtin}
+        onSearchGtin={handleSearchGtin}
         progressDone={progress.visible ? progress.items.filter((i) => i.status === "done" || i.status === "error").length : undefined}
         progressTotal={progress.visible ? progress.items.length : undefined}
       />

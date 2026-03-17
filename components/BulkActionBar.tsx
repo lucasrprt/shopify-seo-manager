@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { EnrichedProduct, AIModel } from "@/types";
-import { Zap, Upload, X, Loader2, ChevronDown, Tag, Hash, Barcode } from "lucide-react";
+import { Zap, Upload, X, Loader2, ChevronDown, Tag, Hash, Barcode, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface BulkActionBarProps {
@@ -17,6 +17,7 @@ interface BulkActionBarProps {
   onApplyCategory: (ids: number[]) => Promise<void>;
   onFixItemGroupId: (ids: number[]) => Promise<void>;
   onFixGtin: (ids: number[]) => Promise<void>;
+  onSearchGtin: (ids: number[]) => Promise<void>;
   /** Live progress counter — shown inside the active button (e.g. "3 / 50"). */
   progressDone?: number;
   progressTotal?: number;
@@ -34,6 +35,7 @@ export function BulkActionBar({
   onApplyCategory,
   onFixItemGroupId,
   onFixGtin,
+  onSearchGtin,
   progressDone,
   progressTotal,
 }: BulkActionBarProps) {
@@ -42,6 +44,7 @@ export function BulkActionBar({
   const [applyingCategory, setApplyingCategory] = useState(false);
   const [fixingIds, setFixingIds] = useState(false);
   const [fixingGtin, setFixingGtin] = useState(false);
+  const [searchingGtin, setSearchingGtin] = useState(false);
   const [mode, setMode] = useState<"full" | "seo" | "google">("full");
   const [modeOpen, setModeOpen] = useState(false);
 
@@ -102,7 +105,16 @@ export function BulkActionBar({
     }
   };
 
-  const busy = generating || syncing || applyingCategory || fixingIds || fixingGtin;
+  const handleSearchGtin = async () => {
+    setSearchingGtin(true);
+    try {
+      await onSearchGtin(selected);
+    } finally {
+      setSearchingGtin(false);
+    }
+  };
+
+  const busy = generating || syncing || applyingCategory || fixingIds || fixingGtin || searchingGtin;
 
   return (
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-gray-900 text-white px-5 py-3 rounded-2xl shadow-2xl border border-gray-700">
@@ -188,6 +200,23 @@ export function BulkActionBar({
           </>
         ) : (
           <><Barcode className="w-3.5 h-3.5" /> Corriger GTIN</>
+        )}
+      </button>
+
+      {/* Search GTIN from product databases */}
+      <button
+        onClick={handleSearchGtin}
+        disabled={busy}
+        className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
+        title="Recherche automatiquement le code EAN-13 de chaque produit dans la base UPCItemDB (100 req/jour gratuit)"
+      >
+        {searchingGtin ? (
+          <>
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            {progressTotal ? `${progressDone ?? 0} / ${progressTotal}` : "Recherche…"}
+          </>
+        ) : (
+          <><Search className="w-3.5 h-3.5" /> Rechercher GTIN</>
         )}
       </button>
 
