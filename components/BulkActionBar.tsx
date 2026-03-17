@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { EnrichedProduct, AIModel } from "@/types";
-import { Zap, Upload, X, Loader2, ChevronDown, Tag, Hash } from "lucide-react";
+import { Zap, Upload, X, Loader2, ChevronDown, Tag, Hash, Barcode } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface BulkActionBarProps {
@@ -16,6 +16,7 @@ interface BulkActionBarProps {
   onBulkGenerateAndSync: (ids: number[], mode: "full" | "seo" | "google") => Promise<void>;
   onApplyCategory: (ids: number[]) => Promise<void>;
   onFixItemGroupId: (ids: number[]) => Promise<void>;
+  onFixGtin: (ids: number[]) => Promise<void>;
   /** Live progress counter — shown inside the active button (e.g. "3 / 50"). */
   progressDone?: number;
   progressTotal?: number;
@@ -32,6 +33,7 @@ export function BulkActionBar({
   onBulkGenerateAndSync,
   onApplyCategory,
   onFixItemGroupId,
+  onFixGtin,
   progressDone,
   progressTotal,
 }: BulkActionBarProps) {
@@ -39,6 +41,7 @@ export function BulkActionBar({
   const [syncing, setSyncing] = useState(false);
   const [applyingCategory, setApplyingCategory] = useState(false);
   const [fixingIds, setFixingIds] = useState(false);
+  const [fixingGtin, setFixingGtin] = useState(false);
   const [mode, setMode] = useState<"full" | "seo" | "google">("full");
   const [modeOpen, setModeOpen] = useState(false);
 
@@ -90,7 +93,16 @@ export function BulkActionBar({
     }
   };
 
-  const busy = generating || syncing || applyingCategory || fixingIds;
+  const handleFixGtin = async () => {
+    setFixingGtin(true);
+    try {
+      await onFixGtin(selected);
+    } finally {
+      setFixingGtin(false);
+    }
+  };
+
+  const busy = generating || syncing || applyingCategory || fixingIds || fixingGtin;
 
   return (
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-gray-900 text-white px-5 py-3 rounded-2xl shadow-2xl border border-gray-700">
@@ -159,6 +171,23 @@ export function BulkActionBar({
           </>
         ) : (
           <><Hash className="w-3.5 h-3.5" /> Corriger IDs GMC</>
+        )}
+      </button>
+
+      {/* Fix GTIN from variant barcodes */}
+      <button
+        onClick={handleFixGtin}
+        disabled={busy}
+        className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
+        title="Copie le code-barres (barcode) des variantes Shopify vers le champ google/gtin pour corriger les erreurs GTIN dans Google Merchant Center"
+      >
+        {fixingGtin ? (
+          <>
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            {progressTotal ? `${progressDone ?? 0} / ${progressTotal}` : "GTIN…"}
+          </>
+        ) : (
+          <><Barcode className="w-3.5 h-3.5" /> Corriger GTIN</>
         )}
       </button>
 

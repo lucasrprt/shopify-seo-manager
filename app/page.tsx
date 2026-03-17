@@ -331,6 +331,64 @@ export default function DashboardPage() {
     );
   };
 
+  const handleFixGtin = async (ids: number[]) => {
+    initProgress(ids, "Correction GTIN");
+    let success = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const id of ids) {
+      const p = products.find((pr) => pr.shopify.id === id);
+      if (!p) { tickProgress(id, "error", "Produit introuvable"); failed++; continue; }
+
+      // Find first valid barcode across all variants (strip non-digits, validate length)
+      const rawBarcode = p.shopify.variants
+        ?.map((v) => v.barcode?.replace(/\D/g, "") ?? "")
+        .find((b) => /^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/.test(b));
+
+      if (!rawBarcode) {
+        tickProgress(id, "done", "Aucun barcode valide trouvé");
+        skipped++;
+        continue;
+      }
+
+      tickProgress(id, "active", `Écriture GTIN ${rawBarcode}…`);
+      try {
+        const res = await fetch("/api/shopify/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            payloads: [{ productId: id, fields: { googleGtin: rawBarcode } }],
+          }),
+        });
+        if (res.status === 401) throw new Error("Session expirée");
+        const data = await res.json() as { success?: number; failed?: number };
+        if ((data.failed ?? 0) > 0) throw new Error("Shopify a rejeté la mise à jour");
+
+        setProducts((prev) =>
+          prev.map((pr) => {
+            if (pr.shopify.id !== id) return pr;
+            const updated = { ...pr, googleGtin: rawBarcode };
+            updated.health = computeHealth(updated);
+            return updated;
+          })
+        );
+        tickProgress(id, "done", `GTIN → ${rawBarcode} ✓`);
+        success++;
+      } catch (e) {
+        tickProgress(id, "error", e instanceof Error ? e.message : "Erreur");
+        failed++;
+      }
+    }
+
+    const parts = [
+      success > 0 ? `${success} corrigé${success !== 1 ? "s" : ""}` : "",
+      skipped > 0 ? `${skipped} sans barcode` : "",
+      failed > 0 ? `${failed} échoué${failed !== 1 ? "s" : ""}` : "",
+    ].filter(Boolean).join(" · ");
+    showToast(parts || "Aucune modification", failed > 0 ? "error" : "success");
+  };
+
   const handleFixItemGroupId = async (ids: number[]) => {
     initProgress(ids, "Correction IDs GMC");
     let success = 0;
@@ -476,6 +534,7 @@ export default function DashboardPage() {
         onBulkGenerateAndSync={handleBulkGenerateAndSync}
         onApplyCategory={handleApplyCategory}
         onFixItemGroupId={handleFixItemGroupId}
+        onFixGtin={handleFixGtin}
         progressDone={progress.visible ? progress.items.filter((i) => i.status === "done" || i.status === "error").length : undefined}
         progressTotal={progress.visible ? progress.items.length : undefined}
       />
