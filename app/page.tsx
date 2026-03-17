@@ -342,24 +342,42 @@ export default function DashboardPage() {
       const p = products.find((pr) => pr.shopify.id === id);
       if (!p) { tickProgress(id, "error", "Produit introuvable"); failed++; continue; }
 
-      // Find first valid barcode across all variants (strip non-digits, validate length)
-      const rawBarcode = p.shopify.variants
+      const validBarcodes = p.shopify.variants
         ?.map((v) => v.barcode?.replace(/\D/g, "") ?? "")
-        .find((b) => /^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/.test(b));
+        .filter((b) => /^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/.test(b)) ?? [];
 
-      if (!rawBarcode) {
+      if (validBarcodes.length === 0) {
         tickProgress(id, "done", "Aucun barcode valide trouvé");
         skipped++;
         continue;
       }
 
-      tickProgress(id, "active", `Écriture GTIN ${rawBarcode}…`);
+      const variantCount = p.shopify.variants?.length ?? 1;
+
+      // Multi-variant: barcodes are read per-variant by Shopify's Google feed — no product-level metafield needed
+      if (variantCount > 1) {
+        // Update local state so health score reflects the barcodes already present
+        setProducts((prev) =>
+          prev.map((pr) => {
+            if (pr.shopify.id !== id) return pr;
+            const updated = { ...pr, googleGtin: validBarcodes[0] };
+            updated.health = computeHealth(updated);
+            return updated;
+          })
+        );
+        tickProgress(id, "done", `${validBarcodes.length}/${variantCount} variantes avec barcode ✓`);
+        success++;
+        continue;
+      }
+
+      // Single-variant: write barcode to google/gtin metafield
+      tickProgress(id, "active", `Écriture GTIN ${validBarcodes[0]}…`);
       try {
         const res = await fetch("/api/shopify/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            payloads: [{ productId: id, fields: { googleGtin: rawBarcode } }],
+            payloads: [{ productId: id, fields: { googleGtin: validBarcodes[0] } }],
           }),
         });
         if (res.status === 401) throw new Error("Session expirée");
@@ -369,12 +387,12 @@ export default function DashboardPage() {
         setProducts((prev) =>
           prev.map((pr) => {
             if (pr.shopify.id !== id) return pr;
-            const updated = { ...pr, googleGtin: rawBarcode };
+            const updated = { ...pr, googleGtin: validBarcodes[0] };
             updated.health = computeHealth(updated);
             return updated;
           })
         );
-        tickProgress(id, "done", `GTIN → ${rawBarcode} ✓`);
+        tickProgress(id, "done", `GTIN → ${validBarcodes[0]} ✓`);
         success++;
       } catch (e) {
         tickProgress(id, "error", e instanceof Error ? e.message : "Erreur");

@@ -132,7 +132,10 @@ export function enrichProduct(
     googleCondition: getMeta("google", "condition") as EnrichedProduct["googleCondition"],
     googleAgeGroup: getMeta("google", "age_group") as EnrichedProduct["googleAgeGroup"],
     googleGender: getMeta("google", "gender") as EnrichedProduct["googleGender"],
-    googleGtin: getMeta("google", "gtin"),
+    googleGtin: getMeta("google", "gtin") ||
+      (product.variants
+        ?.map((v) => v.barcode?.replace(/\D/g, "") ?? "")
+        .find((b) => /^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/.test(b)) ?? ""),
     googleMpn: getMeta("google", "mpn"),
     googleBrand: getMeta("google", "brand") || product.vendor,
     googleColor: getMeta("google", "color"),
