@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { EnrichedProduct, AIModel } from "@/types";
-import { Zap, Upload, X, Loader2, ChevronDown, Tag } from "lucide-react";
+import { Zap, Upload, X, Loader2, ChevronDown, Tag, Hash } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface BulkActionBarProps {
@@ -15,6 +15,7 @@ interface BulkActionBarProps {
   onBulkSync: (ids: number[]) => Promise<void>;
   onBulkGenerateAndSync: (ids: number[], mode: "full" | "seo" | "google") => Promise<void>;
   onApplyCategory: (ids: number[]) => Promise<void>;
+  onFixItemGroupId: (ids: number[]) => Promise<void>;
   /** Live progress counter — shown inside the active button (e.g. "3 / 50"). */
   progressDone?: number;
   progressTotal?: number;
@@ -30,12 +31,14 @@ export function BulkActionBar({
   onBulkSync,
   onBulkGenerateAndSync,
   onApplyCategory,
+  onFixItemGroupId,
   progressDone,
   progressTotal,
 }: BulkActionBarProps) {
   const [generating, setGenerating] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [applyingCategory, setApplyingCategory] = useState(false);
+  const [fixingIds, setFixingIds] = useState(false);
   const [mode, setMode] = useState<"full" | "seo" | "google">("full");
   const [modeOpen, setModeOpen] = useState(false);
 
@@ -78,7 +81,16 @@ export function BulkActionBar({
   };
 
   const modeLabels = { full: "Tout générer", seo: "SEO seulement", google: "Google seulement" };
-  const busy = generating || syncing || applyingCategory;
+  const handleFixItemGroupId = async () => {
+    setFixingIds(true);
+    try {
+      await onFixItemGroupId(selected);
+    } finally {
+      setFixingIds(false);
+    }
+  };
+
+  const busy = generating || syncing || applyingCategory || fixingIds;
 
   return (
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-gray-900 text-white px-5 py-3 rounded-2xl shadow-2xl border border-gray-700">
@@ -132,6 +144,23 @@ export function BulkActionBar({
       </div>
 
       <div className="w-px h-5 bg-gray-600" />
+
+      {/* Fix item_group_id for Google Merchant Center */}
+      <button
+        onClick={handleFixItemGroupId}
+        disabled={busy}
+        className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
+        title="Corrige l'erreur 'ID produit déjà utilisé' dans Google Merchant Center en assignant un item_group_id unique à chaque produit"
+      >
+        {fixingIds ? (
+          <>
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            {progressTotal ? `${progressDone ?? 0} / ${progressTotal}` : "Correction…"}
+          </>
+        ) : (
+          <><Hash className="w-3.5 h-3.5" /> Corriger IDs GMC</>
+        )}
+      </button>
 
       {/* Apply category suggestions */}
       <button

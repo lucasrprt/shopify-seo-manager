@@ -331,6 +331,54 @@ export default function DashboardPage() {
     );
   };
 
+  const handleFixItemGroupId = async (ids: number[]) => {
+    initProgress(ids, "Correction IDs GMC");
+    let success = 0;
+    let failed = 0;
+
+    for (const id of ids) {
+      const p = products.find((pr) => pr.shopify.id === id);
+      if (!p) { tickProgress(id, "error", "Produit introuvable"); failed++; continue; }
+
+      tickProgress(id, "active", "Correction item_group_id…");
+      try {
+        const res = await fetch("/api/shopify/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            payloads: [{
+              productId: id,
+              fields: { googleItemGroupId: String(id) },
+            }],
+          }),
+        });
+        if (res.status === 401) throw new Error("Session expirée");
+        const data = await res.json() as { success?: number; failed?: number };
+        if ((data.failed ?? 0) > 0) throw new Error("Shopify a rejeté la mise à jour");
+
+        // Update local state so the health score reflects the new value
+        setProducts((prev) =>
+          prev.map((pr) => {
+            if (pr.shopify.id !== id) return pr;
+            const updated = { ...pr, googleItemGroupId: String(id) };
+            updated.health = computeHealth(updated);
+            return updated;
+          })
+        );
+        tickProgress(id, "done", `ID corrigé → ${id} ✓`);
+        success++;
+      } catch (e) {
+        tickProgress(id, "error", e instanceof Error ? e.message : "Erreur");
+        failed++;
+      }
+    }
+
+    showToast(
+      `${success} ID${success !== 1 ? "s" : ""} corrigé${success !== 1 ? "s" : ""}${failed > 0 ? ` · ${failed} échoué${failed !== 1 ? "s" : ""}` : ""}`,
+      failed > 0 ? "error" : "success"
+    );
+  };
+
   const total = products.length;
   const perfect = products.filter((p) => p.health.score >= 80).length;
   const critical = products.filter((p) => p.health.score < 50).length;
@@ -427,6 +475,7 @@ export default function DashboardPage() {
         onBulkSync={handleBulkSync}
         onBulkGenerateAndSync={handleBulkGenerateAndSync}
         onApplyCategory={handleApplyCategory}
+        onFixItemGroupId={handleFixItemGroupId}
         progressDone={progress.visible ? progress.items.filter((i) => i.status === "done" || i.status === "error").length : undefined}
         progressTotal={progress.visible ? progress.items.length : undefined}
       />
