@@ -132,10 +132,18 @@ export function enrichProduct(
     googleCondition: getMeta("google", "condition") as EnrichedProduct["googleCondition"],
     googleAgeGroup: getMeta("google", "age_group") as EnrichedProduct["googleAgeGroup"],
     googleGender: getMeta("google", "gender") as EnrichedProduct["googleGender"],
-    googleGtin: getMeta("google", "gtin") ||
-      (product.variants
-        ?.map((v) => v.barcode?.replace(/\D/g, "") ?? "")
-        .find((b) => /^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/.test(b)) ?? ""),
+    googleGtin: (() => {
+      const gtinPattern = /^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/;
+      const metafieldGtin = getMeta("google", "gtin");
+      // If metafield has a valid GTIN, use it
+      if (metafieldGtin && gtinPattern.test(metafieldGtin)) return metafieldGtin;
+      // Otherwise try to find a valid GTIN from variant barcodes (strips spaces/dashes)
+      const variantGtin = product.variants
+        ?.map((v) => (v.barcode ?? "").replace(/\D/g, ""))
+        .find((b) => gtinPattern.test(b)) ?? "";
+      // Return variant GTIN if found, else fall back to raw metafield value (shows error)
+      return variantGtin || metafieldGtin;
+    })(),
     googleMpn: getMeta("google", "mpn"),
     googleBrand: getMeta("google", "brand") || product.vendor,
     googleColor: getMeta("google", "color"),
