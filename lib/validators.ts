@@ -47,7 +47,7 @@ export function validateGtin(value: string): FieldValidation {
   // Strip spaces, dashes and other non-digit characters before validating
   const digits = value.replace(/\D/g, "");
   if (!/^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/.test(digits)) {
-    return { field: "googleGtin", label, valid: false, error: "Doit contenir 8, 12, 13 ou 14 chiffres" };
+    return { field: "googleGtin", label, valid: false, error: `Format invalide (${digits.length} chiffres — EAN-13 requis)` };
   }
   return { field: "googleGtin", label, valid: true };
 }

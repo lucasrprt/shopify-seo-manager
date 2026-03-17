@@ -356,8 +356,39 @@ export default function DashboardPage() {
       }
 
       if (validBarcodes.length === 0) {
-        tickProgress(id, "done", `Aucun barcode valide (actuel: "${p.googleGtin || "vide"}")`);
-        skipped++;
+        // If there's an invalid value stored, clear it so it becomes a warning
+        // (missing GTIN) instead of a blocking error (wrong format)
+        if (p.googleGtin) {
+          tickProgress(id, "active", `GTIN invalide "${p.googleGtin}" → effacement…`);
+          try {
+            const res = await fetch("/api/shopify/sync", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                payloads: [{ productId: id, fields: { googleGtin: "" } }],
+              }),
+            });
+            if (res.status === 401) throw new Error("Session expirée");
+            const data = await res.json() as { success?: number; failed?: number };
+            if ((data.failed ?? 0) > 0) throw new Error("Shopify a rejeté la mise à jour");
+            setProducts((prev) =>
+              prev.map((pr) => {
+                if (pr.shopify.id !== id) return pr;
+                const updated = { ...pr, googleGtin: "" };
+                updated.health = computeHealth(updated);
+                return updated;
+              })
+            );
+            tickProgress(id, "done", `GTIN invalide effacé ✓ (ajoutez un EAN-13 dans les variantes)`);
+            success++;
+          } catch (e) {
+            tickProgress(id, "error", e instanceof Error ? e.message : "Erreur");
+            failed++;
+          }
+        } else {
+          tickProgress(id, "done", `Aucun barcode dans les variantes`);
+          skipped++;
+        }
         continue;
       }
 
