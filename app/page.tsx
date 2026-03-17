@@ -87,7 +87,7 @@ export default function DashboardPage() {
       if (basicProducts.length === 0) return;
       setEnriching(true);
       const total = basicProducts.length;
-      const batchSize = 10;
+      const batchSize = 50; // each server call = 1 GraphQL query covering 50 products
       let offset = 0;
 
       while (offset < total) {

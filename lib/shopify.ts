@@ -102,6 +102,101 @@ export async function fetchProductMetafields(
   return data.metafields;
 }
 
+/**
+ * Fetches the SEO + Google metafields for up to 50 products in a single
+ * GraphQL `nodes` query — ~50× faster than individual REST calls.
+ * Returns a Map from numeric product ID → ShopifyMetafield[].
+ */
+export async function fetchMetafieldsBatch(
+  productIds: number[]
+): Promise<Map<number, ShopifyMetafield[]>> {
+  if (productIds.length === 0) return new Map();
+
+  const gids = productIds.map((id) => `gid://shopify/Product/${id}`);
+
+  const query = `
+    query GetMetafields($ids: [ID!]!) {
+      nodes(ids: $ids) {
+        ... on Product {
+          id
+          titleTag:              metafield(namespace: "global",  key: "title_tag")          { value }
+          descriptionTag:        metafield(namespace: "global",  key: "description_tag")   { value }
+          googleProductType:     metafield(namespace: "google",  key: "custom_product_type") { value }
+          googleCondition:       metafield(namespace: "google",  key: "condition")          { value }
+          googleAgeGroup:        metafield(namespace: "google",  key: "age_group")          { value }
+          googleGender:          metafield(namespace: "google",  key: "gender")             { value }
+          googleGtin:            metafield(namespace: "google",  key: "gtin")               { value }
+          googleMpn:             metafield(namespace: "google",  key: "mpn")                { value }
+          googleBrand:           metafield(namespace: "google",  key: "brand")              { value }
+          googleColor:           metafield(namespace: "google",  key: "color")              { value }
+          googleMaterial:        metafield(namespace: "google",  key: "material")           { value }
+          googleSize:            metafield(namespace: "google",  key: "size")               { value }
+          googlePattern:         metafield(namespace: "google",  key: "pattern")            { value }
+          googleItemGroupId:     metafield(namespace: "google",  key: "item_group_id")      { value }
+        }
+      }
+    }
+  `;
+
+  type NodeResult = {
+    id: string;
+    titleTag?: { value: string } | null;
+    descriptionTag?: { value: string } | null;
+    googleProductType?: { value: string } | null;
+    googleCondition?: { value: string } | null;
+    googleAgeGroup?: { value: string } | null;
+    googleGender?: { value: string } | null;
+    googleGtin?: { value: string } | null;
+    googleMpn?: { value: string } | null;
+    googleBrand?: { value: string } | null;
+    googleColor?: { value: string } | null;
+    googleMaterial?: { value: string } | null;
+    googleSize?: { value: string } | null;
+    googlePattern?: { value: string } | null;
+    googleItemGroupId?: { value: string } | null;
+  };
+
+  const result = await shopifyGraphQL<{ nodes: (NodeResult | null)[] }>(query, { ids: gids });
+
+  const map = new Map<number, ShopifyMetafield[]>();
+
+  for (const node of result.nodes) {
+    if (!node?.id) continue;
+
+    const numericId = parseInt(node.id.replace("gid://shopify/Product/", ""), 10);
+
+    const pairs: Array<[string, string, string | null | undefined]> = [
+      ["global",  "title_tag",           node.titleTag?.value],
+      ["global",  "description_tag",     node.descriptionTag?.value],
+      ["google",  "custom_product_type", node.googleProductType?.value],
+      ["google",  "condition",           node.googleCondition?.value],
+      ["google",  "age_group",           node.googleAgeGroup?.value],
+      ["google",  "gender",              node.googleGender?.value],
+      ["google",  "gtin",                node.googleGtin?.value],
+      ["google",  "mpn",                 node.googleMpn?.value],
+      ["google",  "brand",               node.googleBrand?.value],
+      ["google",  "color",               node.googleColor?.value],
+      ["google",  "material",            node.googleMaterial?.value],
+      ["google",  "size",                node.googleSize?.value],
+      ["google",  "pattern",             node.googlePattern?.value],
+      ["google",  "item_group_id",       node.googleItemGroupId?.value],
+    ];
+
+    const metafields: ShopifyMetafield[] = pairs
+      .filter(([, , v]) => v != null)
+      .map(([namespace, key, value]) => ({
+        namespace,
+        key,
+        value: value as string,
+        type: "single_line_text_field",
+      }));
+
+    map.set(numericId, metafields);
+  }
+
+  return map;
+}
+
 export async function fetchProductWithMetafields(
   productId: number
 ): Promise<EnrichedProduct> {
